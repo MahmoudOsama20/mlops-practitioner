@@ -1,40 +1,82 @@
+import contextvars
+import functools
 import logging
 import time
 from collections.abc import Callable
-from functools import wraps
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
-logger = logging.getLogger(__name__)
+from pythonjsonlogger import json
 
-T = TypeVar("T")
+F = TypeVar("F", bound=Callable[..., Any])
+
+correlation_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "correlation_id",
+    default="-",
+)
+
+
+class JsonFormatter(json.JsonFormatter):
+    """Format log records as structured JSON."""
+
+    def add_fields(
+        self,
+        log_record: dict[str, Any],
+        record: logging.LogRecord,
+        message_dict: dict[str, Any],
+    ) -> None:
+        super().add_fields(
+            log_record,
+            record,
+            message_dict,
+        )
+
+        log_record["timestamp"] = time.strftime(
+            "%Y-%m-%dT%H:%M:%SZ",
+            time.gmtime(record.created),
+        )
+
+        log_record["level"] = record.levelname
+        log_record["logger"] = record.name
+        log_record["correlation_id"] = correlation_id_var.get()
 
 
 def configure_logging() -> None:
-    """Configure application logging."""
+    """Configure application logging with a JSON formatter."""
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    handler = logging.StreamHandler()
+
+    formatter = JsonFormatter(
+        "%(timestamp)s %(level)s %(logger)s " "%(message)s %(correlation_id)s"
     )
 
+    handler.setFormatter(formatter)
 
-def timed(func: Callable[..., T]) -> Callable[..., T]:
+    root_logger = logging.getLogger()
+
+    root_logger.setLevel(logging.INFO)
+
+    root_logger.handlers.clear()
+    root_logger.addHandler(handler)
+
+
+def timed(func: F) -> F:
     """Log the execution time of a function."""
 
-    @wraps(func)
-    def wrapper(*args: Any, **kwargs: Any) -> T:
+    @functools.wraps(func)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
         start = time.perf_counter()
 
-        result = func(*args, **kwargs)
+        try:
+            return func(*args, **kwargs)
+        finally:
+            elapsed = time.perf_counter() - start
 
-        elapsed = time.perf_counter() - start
+            logging.getLogger(func.__module__).info(
+                "function_timing",
+                extra={
+                    "function": func.__name__,
+                    "duration_ms": round(elapsed * 1000, 3),
+                },
+            )
 
-        logger.info(
-            "%s executed in %.4f seconds",
-            func.__name__,
-            elapsed,
-        )
-
-        return result
-
-    return wrapper
+    return cast(F, wrapper)

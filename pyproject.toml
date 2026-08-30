@@ -10,6 +10,7 @@ dependencies = [
     "uvicorn",
     "pydantic",
     "pydantic-settings",
+    "python-json-logger",
 ]
 
 [project.optional-dependencies]

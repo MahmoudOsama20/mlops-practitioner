@@ -1,3 +1,4 @@
+import logging
 import pickle
 from pathlib import Path
 
@@ -9,6 +10,9 @@ from sklearn.metrics import mean_absolute_error, root_mean_squared_error
 from prodml.config import settings
 from prodml.data import load_data, split_data
 from prodml.features import prepare_data, vectorize_features
+from prodml.logging_conf import configure_logging
+
+logger = logging.getLogger(__name__)
 
 
 def train_model(
@@ -139,8 +143,13 @@ def main() -> None:
         y_val,
     )
 
-    print(f"Validation MAE: {mae:.3f} minutes")
-    print(f"Validation RMSE: {rmse:.3f} minutes")
+    logger.info(
+        "model_evaluation",
+        extra={
+            "mae_minutes": round(mae, 3),
+            "rmse_minutes": round(rmse, 3),
+        },
+    )
 
     # Save model
     save_model(
@@ -158,4 +167,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    configure_logging()
     main()
