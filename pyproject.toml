@@ -2,6 +2,7 @@
 name = "prodml"
 version = "0.1.0"
 requires-python = ">=3.10"
+
 dependencies = [
     "scikit-learn",
     "pandas",
@@ -11,6 +12,9 @@ dependencies = [
     "pydantic",
     "pydantic-settings",
     "python-json-logger",
+    "skl2onnx",
+    "onnx",
+    "onnxruntime",
 ]
 
 [project.optional-dependencies]

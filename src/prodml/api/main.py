@@ -1,4 +1,7 @@
+import hashlib
 import logging
+import time
+from contextlib import asynccontextmanager
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
@@ -13,6 +16,7 @@ from .schemas import (
     BatchPredictionRequest,
     BatchPredictionResponse,
     HealthResponse,
+    MetadataResponse,
     PredictionRequest,
     PredictionResponse,
 )
@@ -21,14 +25,55 @@ configure_logging()
 
 logger = logging.getLogger(__name__)
 
+predictor = DurationPredictor()
+
+
+def calculate_artifact_hash() -> str:
+    """Calculate the SHA-256 hash of the model artifact."""
+
+    sha256 = hashlib.sha256()
+
+    with open(settings.model_path, "rb") as file:
+        for chunk in iter(lambda: file.read(8192), b""):
+            sha256.update(chunk)
+
+    return sha256.hexdigest()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Load the prediction model once when the API starts."""
+
+    app.state.model_loaded = False
+
+    try:
+        predictor.load()
+
+        app.state.model_loaded = True
+
+        logger.info(
+            "model_loaded",
+            extra={
+                "model_path": str(settings.model_path),
+            },
+        )
+
+        yield
+
+    except Exception:
+        logger.exception("model_load_failure")
+        raise
+
+    finally:
+        app.state.model_loaded = False
+
+
 app = FastAPI(
     title="NYC Green Taxi Duration Prediction API",
-    version="0.1.0",
+    version=settings.model_version,
     description="API for predicting NYC Green Taxi trip duration.",
+    lifespan=lifespan,
 )
-
-
-predictor = DurationPredictor()
 
 
 @app.middleware("http")
@@ -70,33 +115,41 @@ async def correlation_middleware(
         correlation_id_var.reset(token)
 
 
-@app.on_event("startup")
-def load_prediction_model() -> None:
-    """Load the prediction model when the API starts."""
-
-    try:
-        predictor.load()
-
-        logger.info(
-            "model_loaded",
-            extra={
-                "model_path": str(settings.model_path),
-            },
-        )
-
-    except Exception:
-        logger.exception("model_load_failure")
-        raise
-
-
 @app.get(
     "/health",
     response_model=HealthResponse,
 )
-def health() -> HealthResponse:
-    """Return the health status of the API."""
+def health(request: Request) -> HealthResponse:
+    """Return healthy only when the model is loaded."""
+
+    if not request.app.state.model_loaded:
+        raise HTTPException(
+            status_code=503,
+            detail="Model is not loaded",
+        )
 
     return HealthResponse(status="ok")
+
+
+@app.get(
+    "/metadata",
+    response_model=MetadataResponse,
+)
+def metadata() -> MetadataResponse:
+    """Return model metadata."""
+
+    artifact_hash = calculate_artifact_hash()
+
+    return MetadataResponse(
+        model_version=settings.model_version,
+        training_date=settings.training_date,
+        features=[
+            "PU_DO",
+            "trip_distance",
+        ],
+        framework=settings.framework,
+        artifact_hash=artifact_hash,
+    )
 
 
 @app.post(
@@ -129,6 +182,8 @@ def predict(
         },
     )
 
+    start_time = time.perf_counter()
+
     try:
         duration = predictor.predict_one(
             {
@@ -141,21 +196,27 @@ def predict(
         logger.exception("prediction_failure")
         raise
 
+    latency_ms = (time.perf_counter() - start_time) * 1000
+
     logger.info(
         "prediction_served",
         extra={
             "trip_distance": request.trip_distance,
             "duration_minutes": duration,
+            "latency_ms": round(latency_ms, 3),
         },
     )
 
     return PredictionResponse(
-        duration=duration,
+        prediction=duration,
+        model_version=settings.model_version,
+        correlation_id=correlation_id_var.get(),
+        latency_ms=round(latency_ms, 3),
     )
 
 
 @app.post(
-    "/predict-batch",
+    "/predict/batch",
     response_model=BatchPredictionResponse,
 )
 def predict_batch(
@@ -177,6 +238,15 @@ def predict_batch(
                 detail="trip_distance must be <= 100 miles",
             )
 
+    logger.debug(
+        "batch_feature_vector",
+        extra={
+            "batch_size": len(request.trips),
+        },
+    )
+
+    start_time = time.perf_counter()
+
     try:
         predictions = predictor.predict_batch(
             [
@@ -192,15 +262,21 @@ def predict_batch(
         logger.exception("batch_prediction_failure")
         raise
 
+    latency_ms = (time.perf_counter() - start_time) * 1000
+
     logger.info(
         "batch_prediction_served",
         extra={
             "batch_size": len(predictions),
+            "latency_ms": round(latency_ms, 3),
         },
     )
 
     return BatchPredictionResponse(
         predictions=predictions,
+        model_version=settings.model_version,
+        correlation_id=correlation_id_var.get(),
+        latency_ms=round(latency_ms, 3),
     )
 
 
@@ -209,7 +285,7 @@ async def http_exception_handler(
     request: Request,
     exc: HTTPException,
 ) -> JSONResponse:
-    """Log rejected API requests."""
+    """Return clean HTTP errors."""
 
     logger.error(
         "validation_rejection",
@@ -236,7 +312,7 @@ async def validation_exception_handler(
     request: Request,
     exc: RequestValidationError,
 ) -> JSONResponse:
-    """Log FastAPI validation failures."""
+    """Return clean Pydantic validation errors."""
 
     logger.error(
         "validation_rejection",
@@ -252,6 +328,32 @@ async def validation_exception_handler(
         status_code=422,
         content={
             "detail": exc.errors(),
+        },
+        headers={
+            "X-Request-ID": correlation_id_var.get(),
+        },
+    )
+
+
+@app.exception_handler(Exception)
+async def unexpected_exception_handler(
+    request: Request,
+    exc: Exception,
+) -> JSONResponse:
+    """Log unexpected errors without leaking tracebacks."""
+
+    logger.exception(
+        "unexpected_error",
+        extra={
+            "method": request.method,
+            "path": request.url.path,
+        },
+    )
+
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "Internal server error",
         },
         headers={
             "X-Request-ID": correlation_id_var.get(),
