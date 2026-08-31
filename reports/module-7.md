@@ -9,44 +9,69 @@ and publish the final image to Docker Hub.
 
 ---
 
-## Project Containerization
+## 1. Project Containerization
 
 The API is packaged using a multi-stage Docker build.
 
 The Docker setup consists of:
 
-- `docker/Dockerfile`
-- `docker/docker-compose.yml`
-- `.dockerignore`
+```text
+docker/Dockerfile
+docker/docker-compose.yml
+.dockerignore
+```
 
-The final runtime image contains the installed application,
-runtime dependencies, and model artifacts required by the API.
+The final runtime image contains:
 
-The build uses Python 3.11 slim as the base image.
+- the installed application
+- runtime dependencies
+- trained model artifacts required by the API
+
+The Docker build uses:
+
+```text
+python:3.11-slim
+```
+
+as its base image.
 
 ---
 
-## Multi-stage Docker Build
+## 2. Multi-stage Docker Build
 
-The Dockerfile uses two stages.
+The Dockerfile uses two stages:
 
-### Builder stage
+```text
+Builder Stage
+     |
+     v
+Runtime Stage
+     |
+     v
+FastAPI Application
+```
+
+### Builder Stage
 
 The builder stage:
 
 1. Uses `python:3.11-slim`.
 2. Copies `pyproject.toml`.
 3. Copies the `src/` package.
-4. Installs the project and its dependencies into `/install`.
+4. Installs the project and dependencies into `/install`.
 
-### Runtime stage
+The builder stage is responsible for creating the installed application
+environment without carrying its build contents into the final runtime
+image.
+
+### Runtime Stage
 
 The runtime stage:
 
 1. Uses a clean `python:3.11-slim` image.
 2. Copies the installed application from the builder stage.
-3. Copies the model artifacts into `/app/models`.
-4. Configures the model paths through environment variables.
+3. Copies model artifacts into `/app/models`.
+4. Configures model paths through environment variables.
 5. Creates and uses a non-root `appuser`.
 6. Exposes port `8000`.
 7. Defines a Docker health check.
@@ -54,22 +79,24 @@ The runtime stage:
 
 ---
 
-## Docker Image Size Comparison
+## 3. Docker Image Size Comparison
 
 Two Docker builds were measured.
 
-### Multi-stage image
+### Multi-stage Image
 
 ```text
 Image: prodml-api:0.1.0
+
 Disk usage: 1.11 GB
 Content size: 251 MB
 ```
 
-### Single-stage image
+### Single-stage Image
 
 ```text
 Image: prodml-api:single
+
 Disk usage: 1.13 GB
 Content size: 256 MB
 ```
@@ -81,29 +108,33 @@ Content size: 256 MB
 | Single-stage | 1.13 GB | 256 MB |
 | Multi-stage | 1.11 GB | 251 MB |
 
-The multi-stage image is smaller in the measured Docker environment.
-The measured difference was approximately:
+The multi-stage image was smaller in the measured Docker environment.
 
-- 20 MB in disk usage
-- 5 MB in content size
+Measured difference:
+
+```text
+Disk usage:  approximately 20 MB
+Content size: approximately 5 MB
+```
 
 The multi-stage approach separates build-time installation from the
-runtime image, preventing builder-stage contents from being copied
-into the final runtime image.
+runtime image, preventing builder-stage contents from being copied into
+the final runtime image.
 
 ---
 
-## Docker Ignore
+## 4. Docker Ignore
 
-A root-level `.dockerignore` was added to prevent unnecessary files
-from being sent to the Docker build context.
+A root-level `.dockerignore` was added to prevent unnecessary files from
+being sent to the Docker build context.
 
 Excluded content includes:
 
 - Git metadata
-- Virtual environments
+- virtual environments
 - Python cache files
-- pytest cache and coverage files
+- pytest cache
+- coverage files
 - notebooks
 - tests
 - datasets
@@ -113,11 +144,14 @@ Excluded content includes:
 The `models/` directory is intentionally not excluded because the
 runtime container needs the trained model artifacts.
 
+This keeps the build context focused on files required to construct and
+run the service.
+
 ---
 
-## Model Artifacts
+## 5. Model Artifacts
 
-The Docker image contains the trained model artifacts:
+The Docker image contains:
 
 ```text
 /app/models/baseline.pkl
@@ -137,12 +171,12 @@ Docker Compose additionally mounts the model directory as read-only:
 ../models:/app/models:ro
 ```
 
-This prevents the application container from modifying the model
-files through the mounted volume.
+The read-only mount prevents the application container from modifying
+the model files through the mounted volume.
 
 ---
 
-## Container Security
+## 6. Container Security
 
 The API does not run as root.
 
@@ -152,24 +186,27 @@ A dedicated user was created:
 appuser
 ```
 
-The container was verified with:
+The running Compose service was verified with:
 
 ```powershell
 docker compose -f docker/docker-compose.yml exec api whoami
 ```
 
-which returned:
+The command returned:
 
 ```text
 appuser
 ```
 
-Therefore, the application process runs under the non-root
-`appuser` account.
+Therefore, the application process runs under the non-root `appuser`
+account.
+
+This provides a basic container-security improvement over running the
+application as root.
 
 ---
 
-## Docker Compose
+## 7. Docker Compose
 
 Docker Compose is configured in:
 
@@ -182,7 +219,8 @@ The Compose service provides:
 - API service
 - port mapping `8000:8000`
 - model path environment variables
-- model version and training date configuration
+- model version configuration
+- training date configuration
 - read-only model volume
 - restart policy
 
@@ -192,12 +230,15 @@ The service uses:
 restart: unless-stopped
 ```
 
+The Compose configuration was used to verify both model availability and
+non-root execution.
+
 ---
 
-## Container Verification
+## 8. Container Verification
 
-The container successfully started the FastAPI application and
-loaded the model.
+The container successfully started the FastAPI application and loaded
+the trained model.
 
 Startup logging confirmed:
 
@@ -211,14 +252,16 @@ with the model path:
 /app/models/baseline.pkl
 ```
 
+The container then successfully served API requests.
+
 ---
 
-## Health Endpoint
+## 9. Health Endpoint
 
 The container was tested using:
 
 ```powershell
-curl -i http://127.0.0.1:8000/health
+curl.exe -i http://127.0.0.1:8000/health
 ```
 
 The API returned:
@@ -235,11 +278,14 @@ with:
 }
 ```
 
+The response also included an `X-Request-ID` header, demonstrating that
+the API's correlation middleware remains active inside the container.
+
 ---
 
-## Prediction Endpoint
+## 10. Prediction Endpoint
 
-The prediction endpoint was tested using:
+The prediction endpoint was tested with:
 
 ```json
 {
@@ -264,10 +310,10 @@ The response also included:
 
 - model version `0.1.0`
 - correlation ID
-- request ID through the `X-Request-ID` header
+- `X-Request-ID` response header
 - prediction latency
 
-Example response:
+Example:
 
 ```json
 {
@@ -278,28 +324,61 @@ Example response:
 }
 ```
 
+The container logs also confirmed the request lifecycle:
+
+```text
+request_started
+function_timing
+prediction_served
+request_completed
+```
+
 ---
 
-## Published Docker Image
+## 11. Published Docker Image
 
-The image was tagged using semantic versioning:
+The image was published under:
+
+```text
+mahmoudosama20/prodml-api
+```
+
+Available tags:
 
 ```text
 mahmoudosama20/prodml-api:0.1.0
 mahmoudosama20/prodml-api:latest
 ```
 
-Docker Hub authentication was successful using the configured
-Docker credentials.
+The versioned image was successfully pushed and subsequently pulled
+from Docker Hub.
 
-The versioned image was used to run the API successfully.
+### Pull Verification
+
+```powershell
+docker pull mahmoudosama20/prodml-api:0.1.0
+```
+
+The registry returned the image digest:
+
+```text
+sha256:29112bd77ba93ee0687361088b316a21b4dc303af1be92af5296b640a3b9e920
+```
+
+The `latest` tag was also successfully pulled.
+
+Docker Hub repository:
+
+```text
+https://hub.docker.com/r/mahmoudosama20/prodml-api
+```
 
 ---
 
-## Reproducibility
+## 12. Reproducibility
 
 The final Docker image packages the API and its runtime dependencies,
-so the application can be started without recreating the local Python
+allowing the application to run without recreating the local Python
 virtual environment.
 
 The intended runtime command is:
@@ -314,39 +393,351 @@ Once running, the API is available on:
 http://127.0.0.1:8000
 ```
 
-The health endpoint can be checked with:
+Health check:
 
 ```powershell
-curl http://127.0.0.1:8000/health
+curl.exe http://127.0.0.1:8000/health
 ```
 
-A prediction can be requested with:
+Prediction:
 
 ```powershell
-curl -i -X POST http://127.0.0.1:8000/predict `
+curl.exe -i -X POST http://127.0.0.1:8000/predict `
   -H "Content-Type: application/json" `
   -d '{"PU_DO":"74_42","trip_distance":2.5}'
 ```
 
+The same container image can therefore be pulled from Docker Hub and run
+without installing the project into a local Python environment.
+
 ---
 
-## Conclusion
+## 13. Docker Build
 
-The NYC Green Taxi Duration Prediction API has been containerized
-using a multi-stage Docker build.
+The final multi-stage image was built with:
 
-The container:
+```powershell
+docker build -f docker/Dockerfile -t prodml-api:0.1.0 .
+```
+
+The build completed successfully.
+
+The image was then tagged as:
+
+```powershell
+docker tag prodml-api:0.1.0 prodml-api:latest
+```
+
+Both tags point to the same published image release.
+
+---
+
+## 14. Docker Image Contents
+
+The runtime container contains the application and model artifacts
+required for inference.
+
+Verified model directory:
+
+```text
+/app/models
+├── baseline.pkl
+└── model.onnx
+```
+
+Observed sizes:
+
+```text
+baseline.pkl   approximately 149 KB
+model.onnx     approximately 25 KB
+```
+
+The container successfully loaded `baseline.pkl` during application
+startup.
+
+---
+
+## 15. Container Runtime
+
+The container starts Uvicorn using the FastAPI application.
+
+Runtime configuration:
+
+```text
+Host: 0.0.0.0
+Port: 8000
+User: appuser
+```
+
+Successful startup produced:
+
+```text
+Application startup complete.
+Uvicorn running on http://0.0.0.0:8000
+```
+
+The service then accepted requests from the host through the published
+port.
+
+---
+
+## 16. Production-Oriented Container Features
+
+The final containerization implementation includes:
+
+- multi-stage Docker build
+- Python 3.11 slim runtime
+- isolated runtime image
+- trained model artifacts
+- ONNX artifact
+- environment-based model configuration
+- non-root execution
+- Docker health check
+- port `8000`
+- Docker Compose support
+- read-only model volume
+- restart policy
+- versioned image tags
+- Docker Hub publication
+
+---
+
+## 17. Security Considerations
+
+The containerization work includes several basic security measures:
+
+### Non-root execution
+
+The application runs as:
+
+```text
+appuser
+```
+
+instead of root.
+
+### Read-only model volume
+
+Docker Compose mounts:
+
+```text
+../models:/app/models:ro
+```
+
+which prevents the service from writing to the mounted model directory.
+
+### Reduced build context
+
+`.dockerignore` prevents unnecessary local files such as:
+
+```text
+.git
+.venv
+__pycache__
+.pytest_cache
+coverage files
+tests
+notebooks
+datasets
+.env
+```
+
+from being included in the build context.
+
+These measures reduce unnecessary container privileges and runtime
+write access.
+
+---
+
+## 18. Single-stage vs Multi-stage
+
+The two approaches were evaluated empirically.
+
+### Single-stage
+
+```text
+prodml-api:single
+
+Disk usage: 1.13 GB
+Content size: 256 MB
+```
+
+### Multi-stage
+
+```text
+prodml-api:0.1.0
+
+Disk usage: 1.11 GB
+Content size: 251 MB
+```
+
+### Result
+
+The multi-stage image is smaller in the measured environment:
+
+```text
+Approximately 20 MB less disk usage
+Approximately 5 MB less content size
+```
+
+More importantly, the multi-stage design keeps build-stage contents out
+of the runtime image.
+
+For this project, the multi-stage build was therefore selected as the
+final containerization strategy.
+
+---
+
+## 19. Container Verification Checklist
+
+The final container was verified through:
+
+```text
+Build
+  ↓
+Run
+  ↓
+Model loading
+  ↓
+Non-root user verification
+  ↓
+Health request
+  ↓
+Prediction request
+  ↓
+Structured logs
+  ↓
+Docker Hub pull
+```
+
+Observed results:
+
+```text
+Docker build              → SUCCESS
+Container startup         → SUCCESS
+Model loading             → SUCCESS
+whoami                    → appuser
+GET /health               → 200 OK
+POST /predict             → 200 OK
+Docker Hub push           → SUCCESS
+Docker Hub pull           → SUCCESS
+```
+
+---
+
+## 20. Integration with Previous Modules
+
+Module 7 packages the work completed in the earlier modules into a
+portable container.
+
+The resulting flow is:
+
+```text
+Baseline Model
+      |
+      v
+Model Serialization
+      |
+      v
+Production FastAPI API
+      |
+      v
+Docker Container
+      |
+      v
+Docker Hub
+```
+
+The container therefore packages the existing model-serving system
+rather than introducing a separate inference implementation.
+
+---
+
+## 21. Conclusion
+
+The NYC Green Taxi Duration Prediction API has been successfully
+containerized using a multi-stage Docker build.
+
+The final container:
 
 - builds successfully
-- loads the trained model
+- contains the trained model artifacts
+- loads the model successfully
 - runs as a non-root user
-- exposes a health endpoint
-- serves predictions successfully
-- preserves structured logging and request correlation
+- exposes port `8000`
+- provides a Docker health check
+- serves the `/health` endpoint successfully
+- serves the `/predict` endpoint successfully
+- preserves structured JSON logging
+- preserves request correlation
 - supports Docker Compose
-- uses read-only model mounting in Compose
-- is packaged as a versioned Docker image
-- is published under the `mahmoudosama20/prodml-api` repository
+- uses a read-only model volume in Compose
+- uses environment-based model configuration
+- is available through versioned Docker tags
+- is published to Docker Hub
 
-The measured multi-stage image was smaller than the single-stage
-image in the Docker environment used for this project.
+The measured multi-stage image was smaller than the single-stage image
+in the Docker environment used for this project.
+
+The final published image is:
+
+```text
+mahmoudosama20/prodml-api:0.1.0
+```
+
+---
+
+## 22. Definition of Done
+
+- [x] Dockerfile implemented
+- [x] Multi-stage Docker build implemented
+- [x] Builder stage implemented
+- [x] Runtime stage implemented
+- [x] Python 3.11 slim used
+- [x] Application installed into runtime image
+- [x] Model artifacts copied into the image
+- [x] Model environment variables configured
+- [x] Non-root `appuser` created
+- [x] Non-root execution verified
+- [x] Port `8000` exposed
+- [x] Docker health check configured
+- [x] Uvicorn startup configured
+- [x] `.dockerignore` implemented
+- [x] Single-stage image built
+- [x] Multi-stage image built
+- [x] Image size comparison completed
+- [x] Docker Compose configured
+- [x] Read-only model volume configured
+- [x] Compose restart policy configured
+- [x] Container startup verified
+- [x] Model loading verified
+- [x] `/health` verified
+- [x] `/predict` verified
+- [x] Structured logging verified in container
+- [x] Docker Hub authentication completed
+- [x] Versioned image published
+- [x] `latest` image tag published
+- [x] Published image pulled successfully
+- [x] Reproducible Docker run command documented
+
+---
+
+## 23. Module Status
+
+**Module 7 — Complete**
+
+The project now has a reproducible, containerized API that can be
+distributed through Docker Hub and executed independently of the local
+Python development environment.
+
+Final published image:
+
+```text
+mahmoudosama20/prodml-api:0.1.0
+```
+
+Latest tag:
+
+```text
+mahmoudosama20/prodml-api:latest
+```

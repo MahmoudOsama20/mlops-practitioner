@@ -1,44 +1,48 @@
 # MLOps Practitioner
 
-An end-to-end MLOps project for predicting NYC Green Taxi trip duration.
+An end-to-end MLOps project for predicting **NYC Green Taxi trip duration**.
 
-The project starts with a reproducible machine-learning baseline and progressively turns it into a production-oriented ML system. The current implementation covers data preparation, feature engineering, model training, model persistence, prediction, configuration management, testing, logging, code quality, and pre-commit automation.
+The project starts with a reproducible machine-learning baseline and progressively turns it into a production-oriented ML system. The current implementation covers data preparation, feature engineering, model training, model persistence, ONNX serialization, a FastAPI prediction service, structured logging, automated testing, code quality, containerization, Docker Compose, and Docker Hub publishing.
 
 ---
 
 ## Table of Contents
 
 1. [Project Overview](#project-overview)
-2. [Dataset](#dataset)
-3. [Baseline Model](#baseline-model)
-4. [Baseline Results](#baseline-results)
-5. [Project Structure](#project-structure)
-6. [Requirements](#requirements)
-7. [Environment Setup](#environment-setup)
-8. [Configuration](#configuration)
-9. [Architecture](#architecture)
-10. [Data Pipeline](#data-pipeline)
-11. [Feature Engineering](#feature-engineering)
+2. [Project Progress](#project-progress)
+3. [Dataset](#dataset)
+4. [Baseline Model](#baseline-model)
+5. [Baseline Results](#baseline-results)
+6. [Project Structure](#project-structure)
+7. [Requirements](#requirements)
+8. [Environment Setup](#environment-setup)
+9. [Configuration](#configuration)
+10. [Architecture](#architecture)
+11. [Data and Feature Pipeline](#data-and-feature-pipeline)
 12. [Training Pipeline](#training-pipeline)
 13. [Model Persistence](#model-persistence)
-14. [Prediction Interface](#prediction-interface)
-15. [Logging and Timing](#logging-and-timing)
+14. [Serialization and ONNX](#serialization-and-onnx)
+15. [Production API](#production-api)
 16. [Testing](#testing)
-17. [Code Quality](#code-quality)
-18. [Pre-commit](#pre-commit)
-19. [Notebook](#notebook)
-20. [Development Workflow](#development-workflow)
-21. [Reproducibility](#reproducibility)
-22. [Current Status](#current-status)
-23. [Planned Work](#planned-work)
+17. [Code Quality and Pre-commit](#code-quality-and-pre-commit)
+18. [Docker](#docker)
+19. [Docker Compose](#docker-compose)
+20. [Docker Hub](#docker-hub)
+21. [Running the API](#running-the-api)
+22. [Example Prediction](#example-prediction)
+23. [Development Workflow](#development-workflow)
+24. [Reproducibility](#reproducibility)
+25. [Reports](#reports)
+26. [Current Status](#current-status)
+27. [Next Steps](#next-steps)
 
 ---
 
-## Project Overview
+# Project Overview
 
 The objective is to predict the duration of a NYC Green Taxi trip in minutes.
 
-The initial baseline uses two features:
+The current model uses two features:
 
 - `PU_DO`: pickup and drop-off location pair
 - `trip_distance`: trip distance
@@ -57,38 +61,87 @@ lpep_dropoff_datetime - lpep_pickup_datetime
 
 and converted from seconds to minutes.
 
-The current baseline is intentionally simple. It provides a reproducible reference point that future models and production changes can be compared against.
+The project has progressed through four implemented modules:
+
+| Module | Focus | Status |
+|---|---|---|
+| Module 1 | Baseline model and packaging | Complete |
+| Module 4 | Serialization and ONNX | Complete |
+| Module 5 | Production FastAPI API | Complete |
+| Module 7 | Containerization and publishing | Complete |
+
+Modules 2, 3, and 6 are not part of the current project implementation.
 
 ---
 
-## Dataset
+# Project Progress
 
-The project uses NYC Green Taxi trip records.
+The project evolved from a local baseline into a containerized model-serving application.
 
-The dataset contains fields including:
+```text
+NYC Green Taxi Dataset
+        |
+        v
+Data Preparation
+        |
+        v
+Feature Engineering
+        |
+        v
+LinearRegression Baseline
+        |
+        +--------------------+
+        |                    |
+        v                    v
+    Pickle                 ONNX
+        |                    |
+        +---------+----------+
+                  |
+                  v
+          DurationPredictor
+                  |
+                  v
+             FastAPI API
+                  |
+                  v
+             Docker Image
+                  |
+                  v
+             Docker Hub
+```
 
-- Pickup timestamp
-- Drop-off timestamp
-- Pickup location ID
-- Drop-off location ID
-- Trip distance
-- Passenger count
-- Payment type
-- Fare information
-- Trip type
-- Other taxi-trip attributes
+The final system can be pulled from Docker Hub and run without cloning the repository or recreating the local Python environment.
 
-The current local dataset is:
+---
+
+# Dataset
+
+The project uses **NYC Green Taxi Trip Records**.
+
+The local dataset used during development is:
 
 ```text
 datasets/green_tripdata_2026-01.csv
 ```
 
-The baseline does not use every available column. Only the features required for the initial model are used.
+The dataset contains fields including:
+
+- pickup timestamp
+- drop-off timestamp
+- pickup location ID
+- drop-off location ID
+- trip distance
+- passenger count
+- payment information
+- fare information
+- trip type
+- other taxi-trip attributes
+
+The baseline intentionally uses only the features required for the initial model.
 
 ---
 
-## Baseline Model
+# Baseline Model
 
 The baseline model consists of:
 
@@ -96,51 +149,43 @@ The baseline model consists of:
 DictVectorizer + LinearRegression
 ```
 
-### Input Features
+## Input Features
 
 ```text
 PU_DO
 trip_distance
 ```
 
-### Target
+## Target
 
 ```text
 duration
 ```
 
-### Data Split
+## Data Split
 
 ```text
-Training:   80%
-Validation: 20%
+Training:    80%
+Validation:  20%
 Random seed: 42
 ```
 
 The categorical `PU_DO` feature is transformed using `DictVectorizer`.
 
-The numerical `trip_distance` feature is passed through the same vectorization pipeline.
+The numerical `trip_distance` feature is included in the same vectorized input representation.
 
 ---
 
-## Baseline Results
+# Baseline Results
 
-The current validation performance is:
+The baseline validation performance is:
 
 | Metric | Result |
 |---|---:|
 | MAE | 4.850 minutes |
 | RMSE | 8.270 minutes |
 
-### Interpretation
-
-The baseline has an average absolute error of approximately:
-
-```text
-4.850 minutes
-```
-
-on the validation set.
+The MAE of approximately **4.850 minutes** is the main baseline reference used for future model improvements.
 
 The RMSE is:
 
@@ -148,97 +193,136 @@ The RMSE is:
 8.270 minutes
 ```
 
-The baseline metrics serve as the reference point for future model improvements.
+These metrics were established from the baseline training and validation pipeline.
 
 ---
 
-## Project Structure
+# Project Structure
+
+The current repository structure is:
 
 ```text
 mlops-practitioner/
 │
-├── .env
 ├── .gitignore
 ├── .pre-commit-config.yaml
+├── .dockerignore
 ├── pyproject.toml
 ├── README.md
 │
 ├── datasets/
 │   └── green_tripdata_2026-01.csv
 │
+├── docker/
+│   ├── Dockerfile
+│   └── docker-compose.yml
+│
 ├── models/
-│   └── baseline.pkl
+│   ├── baseline.pkl
+│   └── model.onnx
 │
 ├── notebooks/
 │   └── 00-baseline.ipynb
 │
 ├── reports/
 │   ├── module-1.md
-│   └── README.md
+│   ├── module-4.md
+│   ├── module-5.md
+│   └── module-7.md
 │
 ├── src/
 │   └── prodml/
 │       ├── __init__.py
+│       ├── api/
+│       │   ├── __init__.py
+│       │   ├── main.py
+│       │   └── schemas.py
 │       ├── config.py
 │       ├── data.py
+│       ├── export.py
 │       ├── features.py
 │       ├── logging_conf.py
 │       ├── predict.py
 │       └── train.py
 │
 └── tests/
-    └── test_predict.py
+    ├── conftest.py
+    ├── test_api.py
+    ├── test_features.py
+    ├── test_predict.py
+    └── test_serialization.py
 ```
 
-### Directory Responsibilities
+## Directory Responsibilities
 
-#### `datasets/`
+### `datasets/`
 
-Contains local datasets used by the project.
+Contains the local training dataset.
 
-#### `models/`
+### `models/`
 
-Contains persisted model artifacts.
+Contains serialized model artifacts:
 
-#### `notebooks/`
+```text
+baseline.pkl
+model.onnx
+```
 
-Contains exploratory and demonstration notebooks.
+### `docker/`
 
-#### `reports/`
+Contains the Docker build and Docker Compose configuration.
 
-Contains experiment and module reports.
+### `notebooks/`
 
-#### `src/prodml/`
+Contains the initial baseline experiment notebook.
+
+### `reports/`
+
+Contains documentation for the implemented project modules.
+
+### `src/prodml/`
 
 Contains the production-oriented Python package.
 
-#### `tests/`
+### `tests/`
 
-Contains automated tests.
+Contains automated unit and API tests.
 
 ---
 
-## Requirements
+# Requirements
 
-The project requires Python 3.10 or newer.
+The project requires:
 
-The development environment currently uses:
+```text
+Python >= 3.10
+```
+
+The current development environment uses:
 
 ```text
 Python 3.12.7
 ```
 
-Main runtime dependencies include:
+## Runtime Dependencies
 
-- pandas
+The project declares:
+
 - scikit-learn
+- pandas
 - pyarrow
 - FastAPI
 - Uvicorn
 - Pydantic
 - pydantic-settings
+- python-json-logger
+- skl2onnx
+- ONNX
+- ONNX Runtime
 
-Development dependencies include:
+## Development Dependencies
+
+The development environment includes:
 
 - pytest
 - pytest-cov
@@ -260,29 +344,20 @@ pyproject.toml
 
 ## 1. Clone the repository
 
-After obtaining the repository, move into its root directory:
-
 ```powershell
-cd E:\MLOps\projects\mlops-practitioner
+git clone <repository-url>
+cd mlops-practitioner
 ```
 
-The exact path will depend on your local environment.
+Replace `<repository-url>` with the actual GitHub repository URL.
 
 ---
 
-## 2. Create the virtual environment
+## 2. Create a virtual environment
 
 ```powershell
 python -m venv .venv
 ```
-
-This creates:
-
-```text
-.venv/
-```
-
-at the project root.
 
 ---
 
@@ -304,28 +379,24 @@ The terminal should then show:
 
 ## 4. Install the project
 
-Install the package in editable mode together with development dependencies:
+Install the package together with development dependencies:
 
 ```powershell
 pip install -e ".[dev]"
 ```
 
-Editable installation allows changes inside `src/prodml/` to be reflected immediately without reinstalling the package.
-
 ---
 
 ## 5. Verify the installation
-
-Run:
 
 ```powershell
 python -c "import prodml; print(prodml.__file__)"
 ```
 
-The result should point to:
+The result should point to the installed `prodml` package under:
 
 ```text
-src\prodml\__init__.py
+src\prodml\
 ```
 
 ---
@@ -346,11 +417,9 @@ The environment variable prefix is:
 PRODML_
 ```
 
----
+## Environment Variables
 
-## `.env`
-
-Create a `.env` file in the project root:
+The local configuration can contain values such as:
 
 ```env
 PRODML_DATA_PATH=datasets/green_tripdata_2026-01.csv
@@ -360,145 +429,137 @@ PRODML_TEST_SIZE=0.2
 PRODML_RANDOM_STATE=42
 ```
 
-The `.env` file is local configuration and should not be committed to Git.
+The `.env` file is local configuration and should not be committed.
 
-The `.gitignore` contains:
+## Configuration Reference
 
-```text
-.env
-```
-
----
-
-## Configuration Values
-
-| Variable | Purpose | Default |
+| Variable | Purpose | Value |
 |---|---|---|
 | `PRODML_DATA_PATH` | Training dataset | `datasets/green_tripdata_2026-01.csv` |
-| `PRODML_MODEL_PATH` | Saved model artifact | `models/baseline.pkl` |
+| `PRODML_MODEL_PATH` | Pickle model artifact | `models/baseline.pkl` |
 | `PRODML_REPORT_PATH` | Baseline report | `reports/module-1.md` |
 | `PRODML_TEST_SIZE` | Validation fraction | `0.2` |
 | `PRODML_RANDOM_STATE` | Random seed | `42` |
 
----
-
-## Verify Configuration
-
-Run:
-
-```powershell
-python -c "from prodml.config import settings; print(settings.data_path); print(settings.model_path); print(settings.test_size)"
-```
-
-Expected output should contain the configured dataset path, model path, and:
+Docker uses additional runtime configuration for the model artifacts:
 
 ```text
-0.2
+PRODML_MODEL_PATH=/app/models/baseline.pkl
+PRODML_ONNX_PATH=/app/models/model.onnx
 ```
 
 ---
 
 # Architecture
 
-The current architecture separates data loading, feature engineering, training, prediction, and configuration.
+The current system separates data loading, feature engineering, training, prediction, API serving, and containerization.
 
 ```text
-                    ┌──────────────────────┐
-                    │       Dataset        │
-                    │ green_tripdata_...   │
-                    └──────────┬───────────┘
-                               │
-                               ▼
-                    ┌──────────────────────┐
-                    │       data.py        │
-                    │  load + split data   │
-                    └──────────┬───────────┘
-                               │
-                               ▼
-                    ┌──────────────────────┐
-                    │     features.py      │
-                    │ duration + PU_DO +   │
-                    │ cleaning + vectorize │
-                    └──────────┬───────────┘
-                               │
-                               ▼
-                    ┌──────────────────────┐
-                    │       train.py       │
-                    │ LinearRegression     │
-                    │ evaluation + saving  │
-                    └──────────┬───────────┘
-                               │
-                               ▼
-                    ┌──────────────────────┐
-                    │    baseline.pkl      │
-                    │ model + vectorizer   │
-                    └──────────┬───────────┘
-                               │
-                               ▼
-                    ┌──────────────────────┐
-                    │      predict.py      │
-                    │ DurationPredictor    │
-                    └──────────────────────┘
+                  ┌─────────────────────┐
+                  │       Dataset       │
+                  │ green_tripdata_...  │
+                  └──────────┬──────────┘
+                             │
+                             v
+                  ┌─────────────────────┐
+                  │       data.py       │
+                  │   load + split      │
+                  └──────────┬──────────┘
+                             │
+                             v
+                  ┌─────────────────────┐
+                  │     features.py     │
+                  │ duration + PU_DO +  │
+                  │ cleaning + vectorize│
+                  └──────────┬──────────┘
+                             │
+                             v
+                  ┌─────────────────────┐
+                  │       train.py      │
+                  │ LinearRegression    │
+                  │ evaluation + saving │
+                  └──────────┬──────────┘
+                             │
+                    +--------+--------+
+                    |                 |
+                    v                 v
+              baseline.pkl       model.onnx
+                    |                 |
+                    +--------+--------+
+                             |
+                             v
+                  ┌─────────────────────┐
+                  │      predict.py      │
+                  │ DurationPredictor    │
+                  └──────────┬──────────┘
+                             │
+                             v
+                  ┌─────────────────────┐
+                  │    FastAPI API      │
+                  │ /health             │
+                  │ /metadata           │
+                  │ /predict            │
+                  │ /predict/batch      │
+                  └──────────┬──────────┘
+                             │
+                             v
+                  ┌─────────────────────┐
+                  │    Docker Image     │
+                  │      appuser        │
+                  └──────────┬──────────┘
+                             │
+                             v
+                       Docker Hub
 ```
 
 ---
 
-# Data Pipeline
+# Data and Feature Pipeline
 
-The training pipeline follows these steps:
+The training pipeline follows:
 
 ```text
 Raw Dataset
-     │
-     ▼
+     |
+     v
 Load Data
-     │
-     ▼
+     |
+     v
 Convert Datetimes
-     │
-     ▼
+     |
+     v
 Create Duration
-     │
-     ▼
+     |
+     v
 Clean Invalid/Extreme Trips
-     │
-     ▼
+     |
+     v
 Create PU_DO
-     │
-     ▼
+     |
+     v
 Select Features
-     │
-     ▼
+     |
+     v
 Train / Validation Split
-     │
-     ▼
+     |
+     v
 DictVectorizer
-     │
-     ▼
+     |
+     v
 Linear Regression
-     │
-     ▼
+     |
+     v
 Evaluation
-     │
-     ├──────────────► MAE / RMSE
-     │
-     ▼
+     |
+     +------> MAE / RMSE
+     |
+     v
 Save Model
-```
-
----
-
-# Feature Engineering
-
-Feature engineering is implemented in:
-
-```text
-src/prodml/features.py
 ```
 
 ## Duration
 
-Duration is calculated using the pickup and drop-off timestamps:
+Trip duration is calculated from the pickup and drop-off timestamps:
 
 ```python
 data["duration"] = (
@@ -507,34 +568,25 @@ data["duration"] = (
 ).dt.total_seconds() / 60
 ```
 
----
-
 ## Data Cleaning
 
-Trips are filtered to remove invalid or extreme values.
+The feature pipeline removes invalid or extreme trips.
 
-Duration must satisfy:
+Duration is restricted to:
 
 ```text
 1 <= duration <= 120
 ```
 
-Trip distance must satisfy:
+Trip distance is restricted to:
 
 ```text
 0 < trip_distance <= 100
 ```
 
----
-
 ## PU_DO
 
-`PU_DO` is an engineered categorical feature combining:
-
-```text
-PULocationID
-DOLocationID
-```
+`PU_DO` combines the pickup and drop-off location IDs.
 
 Example:
 
@@ -545,17 +597,11 @@ DOLocationID = 42
 PU_DO = "74_42"
 ```
 
----
+## Final Baseline Features
 
-## Model Features
-
-The baseline uses:
-
-```python
-features = [
-    "PU_DO",
-    "trip_distance",
-]
+```text
+PU_DO
+trip_distance
 ```
 
 ---
@@ -568,7 +614,7 @@ Training is implemented in:
 src/prodml/train.py
 ```
 
-The pipeline:
+The training pipeline:
 
 1. Loads the dataset.
 2. Performs feature engineering and cleaning.
@@ -579,40 +625,21 @@ The pipeline:
 7. Saves the model and vectorizer.
 8. Writes the baseline report.
 
----
+## Train the Model
 
-## Train from the Module
-
-Run:
+Using the Python module:
 
 ```powershell
 python -m prodml.train
 ```
 
-Expected output:
-
-```text
-Validation MAE: 4.850 minutes
-Validation RMSE: 8.270 minutes
-```
-
----
-
-## Train Using the Console Script
-
-The project also defines:
-
-```text
-prodml-train
-```
-
-Run:
+The project also exposes a console script:
 
 ```powershell
 prodml-train
 ```
 
-Both commands execute the same `main()` function in:
+Both execute the training entry point defined in:
 
 ```text
 src/prodml/train.py
@@ -622,208 +649,367 @@ src/prodml/train.py
 
 # Model Persistence
 
-The trained artifact is saved to:
+The Pickle model artifact is:
 
 ```text
 models/baseline.pkl
 ```
 
-The artifact contains:
-
-```python
-{
-    "model": model,
-    "vectorizer": vectorizer,
-}
-```
-
-Both the trained model and fitted `DictVectorizer` are saved because prediction must use the same feature transformation that was fitted during training.
-
-The model is persisted using Python's `pickle` mechanism.
-
----
-
-# Prediction Interface
-
-Prediction is implemented in:
+It contains:
 
 ```text
-src/prodml/predict.py
+LinearRegression
+DictVectorizer
 ```
 
-The main interface is:
+Both the fitted model and fitted vectorizer are persisted because prediction must use the same feature transformation learned during training.
 
-```python
-DurationPredictor
-```
-
-It provides:
-
-```python
-load()
-predict_one()
-predict_batch()
-```
-
-This separates prediction from model training and provides a stable interface for future model-serving components.
-
----
-
-## Load the Model
+The prediction interface loads this artifact through:
 
 ```python
 from prodml.predict import DurationPredictor
 
 predictor = DurationPredictor().load()
 ```
+
+---
+
+# Serialization and ONNX
+
+Serialization and ONNX conversion are documented in:
+
+```text
+reports/module-4.md
+```
+
+The project provides two model representations:
+
+```text
+models/baseline.pkl
+models/model.onnx
+```
+
+## Pickle
+
+The Pickle artifact contains:
+
+- fitted `LinearRegression`
+- fitted `DictVectorizer`
+
+## ONNX
+
+The ONNX representation is used to evaluate model serialization and runtime compatibility.
+
+The exported model supports a dynamic batch dimension and the vectorized feature representation.
+
+The ONNX artifact was validated against the Pickle model using a prediction parity test.
+
+The test currently passes:
+
+```text
+tests/test_serialization.py::test_onnx_prediction_parity PASSED
+```
+
+---
+
+# Production API
+
+The FastAPI application is implemented in:
+
+```text
+src/prodml/api/main.py
+```
+
+The API provides four main endpoints:
+
+```text
+GET  /health
+GET  /metadata
+POST /predict
+POST /predict/batch
+```
+
+## API Flow
+
+```text
+HTTP Request
+     |
+     v
+Correlation Middleware
+     |
+     +----> X-Request-ID
+     |
+     v
+FastAPI Endpoint
+     |
+     v
+Pydantic Validation
+     |
+     v
+DurationPredictor
+     |
+     v
+Prediction
+     |
+     v
+Structured JSON Response
+```
+
+## Startup Model Loading
+
+The model is loaded during application startup rather than being loaded for every request.
+
+Container startup logs confirmed:
+
+```text
+model_loaded
+```
+
+with:
+
+```text
+/app/models/baseline.pkl
+```
+
+This keeps model loading outside the individual prediction request path.
+
+---
+
+## Health Endpoint
+
+Request:
+
+```http
+GET /health
+```
+
+Example:
+
+```powershell
+curl.exe -i http://127.0.0.1:8000/health
+```
+
+Response:
+
+```json
+{
+  "status": "ok"
+}
+```
+
+---
+
+## Metadata Endpoint
+
+Request:
+
+```http
+GET /metadata
+```
+
+This endpoint exposes model/service metadata defined by the API configuration.
 
 ---
 
 ## Single Prediction
 
-```python
-prediction = predictor.predict_one(
-    {
-        "PU_DO": "74_42",
-        "trip_distance": 2.5,
-    }
-)
+Request:
 
-print(f"Predicted duration: {prediction:.2f} minutes")
+```http
+POST /predict
 ```
+
+Example payload:
+
+```json
+{
+  "PU_DO": "74_42",
+  "trip_distance": 2.5
+}
+```
+
+Example successful response:
+
+```json
+{
+  "prediction": 12.727868515169943,
+  "model_version": "0.1.0",
+  "correlation_id": "...",
+  "latency_ms": 4.834
+}
+```
+
+The response also includes the correlation/request ID through the:
+
+```text
+X-Request-ID
+```
+
+header.
 
 ---
 
 ## Batch Prediction
 
-```python
-predictions = predictor.predict_batch(
-    [
-        {
-            "PU_DO": "74_42",
-            "trip_distance": 2.5,
-        },
-        {
-            "PU_DO": "75_41",
-            "trip_distance": 4.1,
-        },
-    ]
-)
+Request:
 
-print(predictions)
+```http
+POST /predict/batch
 ```
+
+Example payload:
+
+```json
+[
+  {
+    "PU_DO": "74_42",
+    "trip_distance": 2.5
+  },
+  {
+    "PU_DO": "75_41",
+    "trip_distance": 4.1
+  }
+]
+```
+
+The API validates the request and returns predictions for the supplied records.
 
 ---
 
-## Prediction Interface Design
+## API Validation
 
-The predictor follows this pattern:
+The API uses Pydantic schemas to validate incoming data.
 
-```text
-DurationPredictor
-       │
-       ├── load()
-       │
-       ├── predict_one()
-       │
-       └── predict_batch()
-```
+The test suite covers:
 
-This interface is intentionally separated from the underlying model implementation so that future serving technologies can reuse it.
+- valid predictions
+- batch predictions
+- negative trip distance
+- trip distance outside the training range
+- unexpected prediction errors
+- response behavior
+
+Invalid input is rejected through API validation rather than being silently passed to the model.
 
 ---
 
-# Logging and Timing
+# Logging and Request Correlation
 
-Logging utilities are implemented in:
+Structured logging is implemented in:
 
 ```text
 src/prodml/logging_conf.py
 ```
 
-The project contains a custom:
+The API uses correlation IDs to trace requests through the service.
 
-```python
-@timed
+A request receives an:
+
+```text
+X-Request-ID
 ```
 
-decorator.
+header.
 
-The decorator measures function execution time and logs the result.
+The same identifier is used in structured log messages such as:
 
-Example:
-
-```python
-from prodml.logging_conf import configure_logging
-from prodml.predict import DurationPredictor
-
-configure_logging()
-
-predictor = DurationPredictor().load()
-
-prediction = predictor.predict_one(
-    {
-        "PU_DO": "74_42",
-        "trip_distance": 2.5,
-    }
-)
+```text
+request_started
+prediction_served
+request_completed
 ```
 
-The prediction methods are decorated with `@timed`.
+Prediction timing is also logged.
+
+Example container log events include:
+
+```text
+model_loaded
+request_started
+function_timing
+prediction_served
+request_completed
+```
+
+This provides an end-to-end request trace from HTTP request to prediction response.
 
 ---
 
 # Testing
 
-Tests are implemented using `pytest`.
+The project uses `pytest`.
 
-Current tests are located in:
+Current test files:
 
 ```text
+tests/conftest.py
+tests/test_api.py
+tests/test_features.py
 tests/test_predict.py
+tests/test_serialization.py
 ```
 
-The current test suite verifies:
+The test suite covers:
 
-- Model loading
-- Single prediction
-- Batch prediction
-
----
+- API health endpoint
+- API metadata endpoint
+- single prediction
+- batch prediction
+- invalid prediction input
+- out-of-range prediction input
+- API error handling
+- duration cleaning
+- `PU_DO` feature creation
+- unseen categorical values
+- missing categories
+- model loading
+- single prediction
+- deterministic prediction
+- batch prediction
+- Pickle/ONNX prediction parity
 
 ## Run Tests
-
-Basic test run:
 
 ```powershell
 pytest -v
 ```
 
-Run with coverage:
+## Run Tests with Coverage
 
 ```powershell
 pytest -v --cov=src/prodml --cov-report=term-missing
 ```
 
-The current prediction tests pass successfully.
+## Current Test Result
 
-Example:
-
-```text
-3 passed
-```
-
-The current coverage is approximately:
+The complete test suite currently reports:
 
 ```text
-41%
+17 passed
 ```
 
-The lower overall coverage is expected at this stage because the initial tests focus on the prediction interface. Additional tests for data loading, feature engineering, and training can be added as the project grows.
+Coverage:
+
+```text
+75.99%
+```
+
+The project enforces a minimum coverage threshold of:
+
+```text
+70%
+```
+
+The current result therefore passes the coverage gate:
+
+```text
+Required test coverage of 70% reached.
+Total coverage: 75.99%
+```
 
 ---
 
-# Code Quality
+# Code Quality and Pre-commit
 
 The project uses:
 
@@ -831,19 +1017,13 @@ The project uses:
 - Black
 - pre-commit
 
----
-
 ## Ruff
 
-Check the source and test code:
+Run:
 
 ```powershell
 ruff check src tests
 ```
-
-Ruff is also configured to run automatically through pre-commit.
-
----
 
 ## Black
 
@@ -853,57 +1033,35 @@ Check formatting:
 black --check src tests
 ```
 
-Format the project:
+Format:
 
 ```powershell
 black src tests
 ```
 
-The project targets Python 3.12 for Black formatting.
+## Pre-commit
 
----
+Install the hooks:
 
-# Pre-commit
+```powershell
+pre-commit install
+```
 
-The project uses pre-commit to automatically enforce basic code quality checks.
+Run all hooks:
 
-Configuration:
-
-```text
-.pre-commit-config.yaml
+```powershell
+pre-commit run --all-files
 ```
 
 Current hooks include:
 
 ```text
 end-of-file-fixer
-ruff
+ruff check
 black
 ```
 
----
-
-## Install Pre-commit
-
-```powershell
-pre-commit install
-```
-
-This installs the Git hook:
-
-```text
-.git/hooks/pre-commit
-```
-
----
-
-## Run All Hooks
-
-```powershell
-pre-commit run --all-files
-```
-
-Expected result:
+The final verification currently passes all hooks:
 
 ```text
 fix end of files ........ Passed
@@ -913,53 +1071,395 @@ black ................... Passed
 
 ---
 
-# Notebook
+# Docker
 
-The initial baseline experiment is documented in:
+The API is containerized using a multi-stage Docker build.
 
-```text
-notebooks/00-baseline.ipynb
-```
-
-The notebook was used to establish the initial model and evaluate its performance.
-
-The reusable implementation has since been moved into the Python package under:
+Docker files:
 
 ```text
-src/prodml/
+docker/Dockerfile
+.dockerignore
 ```
 
-The long-term goal is for the notebook to focus on experimentation and demonstration rather than containing production implementation logic.
+The final runtime image uses:
+
+```text
+python:3.11-slim
+```
+
+## Multi-stage Build
+
+### Builder Stage
+
+The builder:
+
+1. Uses `python:3.11-slim`.
+2. Copies `pyproject.toml`.
+3. Copies `src/`.
+4. Installs the project and dependencies into `/install`.
+
+### Runtime Stage
+
+The runtime:
+
+1. Uses a clean `python:3.11-slim`.
+2. Copies the installed application.
+3. Copies the model artifacts.
+4. Creates `appuser`.
+5. Runs as the non-root user.
+6. Exposes port `8000`.
+7. Defines a health check.
+8. Starts Uvicorn.
+
+---
+
+## Build the Image
+
+```powershell
+docker build -f docker/Dockerfile -t prodml-api:0.1.0 .
+```
+
+Tag the latest version:
+
+```powershell
+docker tag prodml-api:0.1.0 prodml-api:latest
+```
+
+---
+
+## Docker Image Size
+
+The project compared a single-stage build with the final multi-stage build.
+
+| Build | Disk usage | Content size |
+|---|---:|---:|
+| Single-stage | 1.13 GB | 256 MB |
+| Multi-stage | 1.11 GB | 251 MB |
+
+Measured difference:
+
+```text
+Approximately 20 MB less disk usage
+Approximately 5 MB less content size
+```
+
+The multi-stage image was therefore smaller in the measured Docker environment.
+
+---
+
+# Docker Ignore
+
+The root `.dockerignore` prevents unnecessary files from being sent to the Docker build context.
+
+Excluded content includes:
+
+```text
+.git
+.venv
+__pycache__
+.pytest_cache
+.ruff_cache
+coverage files
+notebooks
+tests
+datasets
+.env
+IDE configuration
+```
+
+The `models/` directory is intentionally included because the runtime image needs the trained model artifacts.
+
+---
+
+# Docker Runtime
+
+The runtime image contains:
+
+```text
+/app/models/baseline.pkl
+/app/models/model.onnx
+```
+
+The model paths are configured as:
+
+```text
+PRODML_MODEL_PATH=/app/models/baseline.pkl
+PRODML_ONNX_PATH=/app/models/model.onnx
+```
+
+The container runs as:
+
+```text
+appuser
+```
+
+Port:
+
+```text
+8000
+```
+
+The Docker health check targets:
+
+```text
+http://localhost:8000/health
+```
+
+---
+
+# Docker Compose
+
+Docker Compose is configured in:
+
+```text
+docker/docker-compose.yml
+```
+
+The Compose configuration provides:
+
+- API service
+- port mapping `8000:8000`
+- model path environment variables
+- model version configuration
+- training date configuration
+- read-only model volume
+- restart policy
+
+The restart policy is:
+
+```yaml
+restart: unless-stopped
+```
+
+The model directory is mounted read-only:
+
+```text
+../models:/app/models:ro
+```
+
+---
+
+## Verify the Model Files
+
+```powershell
+docker compose -f docker/docker-compose.yml exec api ls -lh /app/models
+```
+
+The expected files are:
+
+```text
+baseline.pkl
+model.onnx
+```
+
+## Verify Non-root Execution
+
+```powershell
+docker compose -f docker/docker-compose.yml exec api whoami
+```
+
+Expected:
+
+```text
+appuser
+```
+
+The container was verified to run under the non-root `appuser` account.
+
+---
+
+# Docker Hub
+
+The final image was published to:
+
+```text
+mahmoudosama20/prodml-api
+```
+
+Available tags:
+
+```text
+mahmoudosama20/prodml-api:0.1.0
+mahmoudosama20/prodml-api:latest
+```
+
+Docker Hub repository:
+
+```text
+https://hub.docker.com/r/mahmoudosama20/prodml-api
+```
+
+## Pull the Published Image
+
+```powershell
+docker pull mahmoudosama20/prodml-api:0.1.0
+```
+
+The published image was successfully pulled and verified.
+
+The versioned image digest was:
+
+```text
+sha256:29112bd77ba93ee0687361088b316a21b4dc303af1be92af5296b640a3b9e920
+```
+
+The `latest` tag was also successfully pulled.
+
+---
+
+# Running the API
+
+The final Docker image can be run without cloning the repository.
+
+```powershell
+docker run --rm -p 8000:8000 mahmoudosama20/prodml-api:0.1.0
+```
+
+The API will be available at:
+
+```text
+http://127.0.0.1:8000
+```
+
+This is the main reproducibility goal of the containerization work: a user can pull the published image and run the prediction service without recreating the local development environment.
+
+---
+
+# Example Prediction
+
+## Health Check
+
+```powershell
+curl.exe -i http://127.0.0.1:8000/health
+```
+
+Expected:
+
+```text
+HTTP/1.1 200 OK
+```
+
+```json
+{
+  "status": "ok"
+}
+```
+
+---
+
+## Prediction Request
+
+PowerShell:
+
+```powershell
+curl.exe -i -X POST http://127.0.0.1:8000/predict `
+  -H "Content-Type: application/json" `
+  -d '{"PU_DO":"74_42","trip_distance":2.5}'
+```
+
+Example response:
+
+```json
+{
+  "prediction": 12.727868515169943,
+  "model_version": "0.1.0",
+  "correlation_id": "f3643606-0f14-4380-8578-bb4cf2054acd",
+  "latency_ms": 4.834
+}
+```
+
+The exact correlation ID and latency will differ between requests.
+
+The observed prediction for:
+
+```text
+PU_DO = 74_42
+trip_distance = 2.5
+```
+
+was:
+
+```text
+12.727868515169943 minutes
+```
+
+---
+
+# API Verification
+
+The final container was tested end-to-end.
+
+```text
+Docker image
+     |
+     v
+Container startup
+     |
+     v
+Model loaded
+     |
+     v
+GET /health
+     |
+     v
+POST /predict
+     |
+     v
+Structured logs
+```
+
+Observed results:
+
+| Check | Result |
+|---|---|
+| Docker build | PASS |
+| Container startup | PASS |
+| Model loading | PASS |
+| Non-root execution | PASS |
+| `/health` | 200 OK |
+| `/predict` | 200 OK |
+| Structured logging | PASS |
+| Docker Hub push | PASS |
+| Docker Hub pull | PASS |
 
 ---
 
 # Development Workflow
 
-The recommended workflow is:
+The recommended local workflow is:
 
 ```text
-1. Activate .venv
-        ↓
-2. Modify source code
-        ↓
-3. Run pre-commit
-        ↓
-4. Run tests
-        ↓
-5. Train/evaluate model
-        ↓
-6. Check metrics
-        ↓
-7. Review Git changes
-        ↓
-8. Commit
+Activate environment
+       |
+       v
+Modify code
+       |
+       v
+Run pre-commit
+       |
+       v
+Run tests
+       |
+       v
+Train/evaluate when required
+       |
+       v
+Build/test Docker image
+       |
+       v
+Review Git status
+       |
+       v
+Commit
+       |
+       v
+Push
 ```
 
----
+## Complete Local Verification
 
-## Complete Development Check
-
-### Activate environment
+### Activate
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
@@ -977,73 +1477,122 @@ pre-commit run --all-files
 pytest -v --cov=src/prodml --cov-report=term-missing
 ```
 
-### Run training
+### Train
 
 ```powershell
 python -m prodml.train
 ```
 
-### Run the console training command
+### Check Git
 
 ```powershell
-prodml-train
+git status
+```
+
+A clean final state should report:
+
+```text
+nothing to commit, working tree clean
 ```
 
 ---
 
 # Reproducibility
 
-The baseline uses a fixed random seed:
-
-```text
-random_state = 42
-```
-
-The validation fraction is:
+The baseline uses:
 
 ```text
 test_size = 0.2
+random_state = 42
 ```
 
-These values are controlled through `pydantic-settings`.
+The project also uses a fixed feature definition:
 
-The same dataset, preprocessing rules, feature definitions, split configuration, and model configuration should reproduce the baseline metrics approximately.
+```text
+PU_DO
+trip_distance
+```
 
-Current reference metrics:
+and fixed data-cleaning rules.
+
+The baseline reference metrics are:
 
 ```text
 MAE  = 4.850 minutes
 RMSE = 8.270 minutes
 ```
 
----
+The Docker image adds another level of reproducibility by packaging:
 
-# Git and Repository Hygiene
+- application code
+- Python runtime
+- runtime dependencies
+- model artifacts
+- API configuration
 
-The following local files/directories are excluded from Git:
+The published image can be pulled using:
 
-```text
-.venv/
-.env
-__pycache__/
-*.py[cod]
-*.egg-info/
-.pytest_cache/
-.ruff_cache/
-.coverage
+```powershell
+docker pull mahmoudosama20/prodml-api:0.1.0
 ```
 
-The `.env` file is intentionally excluded because environment-specific configuration should remain local.
+and run using:
 
-A future `.env.example` can be used to document expected configuration variables without committing the local environment file.
+```powershell
+docker run --rm -p 8000:8000 mahmoudosama20/prodml-api:0.1.0
+```
+
+---
+
+# Reports
+
+Detailed module documentation is available under:
+
+```text
+reports/
+```
+
+Current reports:
+
+### Module 1
+
+```text
+reports/module-1.md
+```
+
+Covers the baseline model, validation metrics, packaging, and initial production-oriented project structure.
+
+### Module 4
+
+```text
+reports/module-4.md
+```
+
+Covers model serialization, Pickle, ONNX, prediction parity, and serialization comparison.
+
+### Module 5
+
+```text
+reports/module-5.md
+```
+
+Covers the FastAPI production API, validation, endpoints, startup model loading, structured logging, and request correlation.
+
+### Module 7
+
+```text
+reports/module-7.md
+```
+
+Covers Docker containerization, multi-stage builds, image-size comparison, Docker Compose, non-root execution, and Docker Hub publishing.
 
 ---
 
 # Current Status
 
-## Completed
+## Module 1 — Baseline Model
 
-- [x] NYC Green Taxi dataset loaded
+- [x] Dataset loaded
 - [x] Datetime conversion
 - [x] Trip duration calculation
 - [x] Data cleaning
@@ -1054,55 +1603,91 @@ A future `.env.example` can be used to document expected configuration variables
 - [x] Linear Regression baseline
 - [x] MAE evaluation
 - [x] RMSE evaluation
-- [x] Baseline model persistence
-- [x] Baseline report
+- [x] Model persistence
 - [x] Python package structure
-- [x] `pyproject.toml`
-- [x] Editable package installation
-- [x] Virtual environment
-- [x] `pydantic-settings`
-- [x] `.env` configuration
-- [x] Type hints for public functions
-- [x] `DurationPredictor`
-- [x] `predict_one()`
-- [x] `predict_batch()`
-- [x] Custom `@timed` decorator
-- [x] Ruff
-- [x] Black
-- [x] pre-commit
-- [x] Automated prediction tests
-- [x] Training through `python -m prodml.train`
-- [x] Training through `prodml-train`
+- [x] Configuration management
+
+## Module 4 — Serialization + ONNX
+
+- [x] Pickle model artifact
+- [x] ONNX model artifact
+- [x] ONNX conversion
+- [x] ONNX Runtime integration
+- [x] Pickle/ONNX prediction parity test
+- [x] Serialization documentation
+
+## Module 5 — Production API
+
+- [x] FastAPI application
+- [x] Pydantic request/response schemas
+- [x] `/health`
+- [x] `/metadata`
+- [x] `/predict`
+- [x] `/predict/batch`
+- [x] Startup model loading
+- [x] Structured JSON logging
+- [x] Request correlation IDs
+- [x] Prediction timing
+- [x] API integration tests
+- [x] Error handling tests
+
+## Module 7 — Containerization and Publishing
+
+- [x] Multi-stage Dockerfile
+- [x] Runtime image
+- [x] `.dockerignore`
+- [x] Docker Compose
+- [x] Model artifacts in container
+- [x] Read-only model volume
+- [x] Non-root `appuser`
+- [x] Docker health check
+- [x] Single-stage vs multi-stage comparison
+- [x] Docker image build
+- [x] Semantic version tag
+- [x] `latest` tag
+- [x] Docker Hub publication
+- [x] Docker Hub pull verification
+- [x] Container health verification
+- [x] Container prediction verification
+
+## Quality Gate
+
+- [x] Pre-commit hooks pass
+- [x] Ruff passes
+- [x] Black passes
+- [x] 17 tests pass
+- [x] Coverage >= 70%
+- [x] Current coverage: 75.99%
+- [x] Working tree verified clean
 
 ---
 
-# Planned Work
+# Next Steps
 
-The project will continue toward a production-oriented MLOps system.
+The current implementation has completed the modules available in this project.
 
-Planned components include:
+Potential future improvements include:
 
-- [ ] Complete notebook refactoring
-- [ ] Increase test coverage
-- [ ] Add data and feature-engineering tests
-- [ ] Add FastAPI application
-- [ ] Add API schemas
-- [ ] Add `/health` endpoint
-- [ ] Add prediction endpoints
-- [ ] Add API integration tests
-- [ ] Containerize the service
-- [ ] Add production model serving
-- [ ] Add load testing
-- [ ] Add monitoring
-- [ ] Add deployment infrastructure
-- [ ] Add model optimization
-- [ ] Add CI/CD
+- [ ] CI/CD pipeline
+- [ ] Automated Docker image builds
+- [ ] Automated testing in CI
+- [ ] Model performance monitoring
+- [ ] Data-quality monitoring
+- [ ] API load testing
+- [ ] Deployment to a cloud/container platform
+- [ ] Model version management
+- [ ] Model registry integration
+- [ ] More advanced models and feature sets
+- [ ] Automated retraining
+- [ ] Production observability and metrics
+
+These are future extensions rather than requirements of the currently completed modules.
 
 ---
 
 # Baseline Reference
 
-The baseline should be treated as the reference model for future work.
+The baseline should remain the reference point for future model improvements.
 
 ```text
 Model
@@ -1128,10 +1713,42 @@ RMSE
 8.270 minutes
 ```
 
-Future models and engineering changes should be evaluated against this reference to determine whether they provide a measurable improvement.
+Any future model or engineering change should be evaluated against this reference to determine whether it provides a measurable improvement.
 
 ---
 
-# License
+# Final Project Snapshot
 
-Add the project's license information here when the repository license is finalized.
+```text
+Project
+NYC Green Taxi Duration Prediction
+
+Model
+LinearRegression + DictVectorizer
+
+Serialization
+Pickle + ONNX
+
+API
+FastAPI
+
+Tests
+17 passed
+
+Coverage
+75.99%
+
+Container
+Multi-stage Docker
+
+Runtime User
+appuser
+
+Published Image
+mahmoudosama20/prodml-api:0.1.0
+
+Latest Tag
+mahmoudosama20/prodml-api:latest
+```
+
+The project currently provides a reproducible path from raw taxi-trip data to a tested, serialized, containerized, and publicly published ML prediction service.
