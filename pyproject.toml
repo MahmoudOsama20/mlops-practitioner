@@ -40,3 +40,6 @@ where = ["src"]
 
 [tool.black]
 target-version = ["py312"]
+
+[tool.pytest.ini_options]
+addopts = "--cov=src/prodml --cov-fail-under=70"

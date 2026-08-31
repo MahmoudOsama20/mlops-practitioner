@@ -1,24 +1,20 @@
 from fastapi.testclient import TestClient
 
-from prodml.api.main import app
 
-
-def test_health() -> None:
+def test_health(client: TestClient) -> None:
     """Health endpoint should confirm the model is loaded."""
 
-    with TestClient(app) as client:
-        response = client.get("/health")
+    response = client.get("/health")
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
     assert "X-Request-ID" in response.headers
 
 
-def test_metadata() -> None:
+def test_metadata(client: TestClient) -> None:
     """Metadata endpoint should return model metadata."""
 
-    with TestClient(app) as client:
-        response = client.get("/metadata")
+    response = client.get("/metadata")
 
     assert response.status_code == 200
 
@@ -31,27 +27,23 @@ def test_metadata() -> None:
         "trip_distance",
     ]
     assert body["framework"] == "scikit-learn"
-
-    # SHA-256 produces a 64-character hexadecimal hash.
     assert len(body["artifact_hash"]) == 64
+
     assert all(character in "0123456789abcdef" for character in body["artifact_hash"])
 
     assert "X-Request-ID" in response.headers
 
 
-def test_predict() -> None:
+def test_predict(
+    client: TestClient,
+    sample_features: dict,
+) -> None:
     """Predict endpoint should return a prediction."""
 
-    payload = {
-        "PU_DO": "74_42",
-        "trip_distance": 2.5,
-    }
-
-    with TestClient(app) as client:
-        response = client.post(
-            "/predict",
-            json=payload,
-        )
+    response = client.post(
+        "/predict",
+        json=sample_features,
+    )
 
     assert response.status_code == 200
 
@@ -64,7 +56,7 @@ def test_predict() -> None:
     assert body["latency_ms"] >= 0
 
 
-def test_predict_batch() -> None:
+def test_predict_batch(client: TestClient) -> None:
     """Batch prediction endpoint should return predictions."""
 
     payload = {
@@ -80,11 +72,10 @@ def test_predict_batch() -> None:
         ]
     }
 
-    with TestClient(app) as client:
-        response = client.post(
-            "/predict/batch",
-            json=payload,
-        )
+    response = client.post(
+        "/predict/batch",
+        json=payload,
+    )
 
     assert response.status_code == 200
 
@@ -97,7 +88,7 @@ def test_predict_batch() -> None:
     assert body["latency_ms"] >= 0
 
 
-def test_predict_negative_distance() -> None:
+def test_predict_negative_distance(client: TestClient) -> None:
     """Negative distance should be rejected by Pydantic."""
 
     payload = {
@@ -105,11 +96,10 @@ def test_predict_negative_distance() -> None:
         "trip_distance": -5,
     }
 
-    with TestClient(app) as client:
-        response = client.post(
-            "/predict",
-            json=payload,
-        )
+    response = client.post(
+        "/predict",
+        json=payload,
+    )
 
     assert response.status_code == 422
 
@@ -119,7 +109,9 @@ def test_predict_negative_distance() -> None:
     assert "X-Request-ID" in response.headers
 
 
-def test_predict_distance_outside_training_range() -> None:
+def test_predict_distance_outside_training_range(
+    client: TestClient,
+) -> None:
     """Distances above the training range should be rejected."""
 
     payload = {
@@ -127,11 +119,10 @@ def test_predict_distance_outside_training_range() -> None:
         "trip_distance": 101,
     }
 
-    with TestClient(app) as client:
-        response = client.post(
-            "/predict",
-            json=payload,
-        )
+    response = client.post(
+        "/predict",
+        json=payload,
+    )
 
     assert response.status_code == 422
 
@@ -140,13 +131,11 @@ def test_predict_distance_outside_training_range() -> None:
     assert "X-Request-ID" in response.headers
 
 
-def test_predict_unexpected_error(monkeypatch) -> None:
+def test_predict_unexpected_error(
+    client: TestClient,
+    monkeypatch,
+) -> None:
     """Unexpected prediction errors should return a clean 500."""
-
-    payload = {
-        "PU_DO": "74_42",
-        "trip_distance": 2.5,
-    }
 
     def failing_predict_one(features: dict) -> float:
         raise RuntimeError("simulated model failure")
@@ -156,14 +145,13 @@ def test_predict_unexpected_error(monkeypatch) -> None:
         failing_predict_one,
     )
 
-    with TestClient(
-        app,
-        raise_server_exceptions=False,
-    ) as client:
-        response = client.post(
-            "/predict",
-            json=payload,
-        )
+    response = client.post(
+        "/predict",
+        json={
+            "PU_DO": "74_42",
+            "trip_distance": 2.5,
+        },
+    )
 
     assert response.status_code == 500
 
