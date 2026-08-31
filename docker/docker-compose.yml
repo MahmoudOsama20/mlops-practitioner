@@ -1,0 +1,15 @@
+services:
+  api:
+    image: prodml-api:0.1.0
+    container_name: prodml-api
+    ports:
+      - "8000:8000"
+    environment:
+      PRODML_MODEL_PATH: /app/models/baseline.pkl
+      PRODML_ONNX_PATH: /app/models/model.onnx
+      PRODML_MODEL_VERSION: "0.1.0"
+      PRODML_TRAINING_DATE: "2026-08-30"
+      PRODML_FRAMEWORK: "scikit-learn"
+    volumes:
+      - ../models:/app/models:ro
+    restart: unless-stopped
