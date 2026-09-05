@@ -15,6 +15,7 @@ dependencies = [
     "skl2onnx",
     "onnx",
     "onnxruntime",
+    "mlflow",
 ]
 
 [project.optional-dependencies]

@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     training_date: str = "2026-08-30"
     framework: str = "scikit-learn"
 
+    mlflow_tracking_uri: str = "http://localhost:5000"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
