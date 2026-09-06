@@ -16,6 +16,8 @@ dependencies = [
     "onnx",
     "onnxruntime",
     "mlflow",
+    "xgboost",
+    "torch",
 ]
 
 [project.optional-dependencies]
