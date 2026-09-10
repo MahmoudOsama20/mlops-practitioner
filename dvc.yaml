@@ -1,0 +1,39 @@
+stages:
+
+  prepare:
+    cmd: python -m prodml.dvc_pipeline prepare
+    deps:
+      - datasets/green_tripdata_2026-02.csv
+      - src/prodml/dvc_pipeline.py
+      - src/prodml/features.py
+    outs:
+      - pipelines/data/prepared.csv
+
+  featurize:
+    cmd: python -m prodml.dvc_pipeline featurize
+    deps:
+      - pipelines/data/prepared.csv
+      - src/prodml/dvc_pipeline.py
+    outs:
+      - pipelines/data/features.pkl
+
+  train:
+    cmd: python -m prodml.dvc_pipeline train
+    deps:
+      - pipelines/data/features.pkl
+      - src/prodml/dvc_pipeline.py
+    params:
+      - training.n_estimators
+      - training.max_depth
+      - training.learning_rate
+    outs:
+      - pipelines/models/model.pkl
+
+  evaluate:
+    cmd: python -m prodml.dvc_pipeline evaluate
+    deps:
+      - pipelines/data/features.pkl
+      - pipelines/models/model.pkl
+      - src/prodml/dvc_pipeline.py
+    metrics:
+      - pipelines/metrics.json
