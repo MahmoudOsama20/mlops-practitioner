@@ -18,6 +18,8 @@ dependencies = [
     "mlflow",
     "xgboost",
     "torch",
+    "dvc[s3]",
+    "pyyaml",
 ]
 
 [project.optional-dependencies]

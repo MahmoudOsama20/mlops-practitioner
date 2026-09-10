@@ -6,6 +6,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import mlflow
+import mlflow.pytorch
 import mlflow.sklearn
 import mlflow.xgboost
 import numpy as np
@@ -67,6 +68,26 @@ def get_data_hash(path: Path) -> str:
     return sha256.hexdigest()
 
 
+def get_dvc_data_hash(path: Path) -> str:
+    """Return the DVC hash recorded for the dataset."""
+    import yaml
+
+    dvc_path = Path(f"{path}.dvc")
+
+    if not dvc_path.exists():
+        return "unknown"
+
+    with open(dvc_path, encoding="utf-8") as file:
+        metadata = yaml.safe_load(file)
+
+    outs = metadata.get("outs", [])
+
+    if not outs:
+        return "unknown"
+
+    return str(outs[0].get("md5", "unknown"))
+
+
 def create_requirements_file(path: Path) -> None:
     """Capture the exact Python environment used for training."""
     requirements = subprocess.check_output(
@@ -101,12 +122,14 @@ def common_tags(
     framework: str,
     git_commit: str,
     data_version: str,
+    dvc_data_hash: str,
     author: str,
 ) -> dict[str, str]:
     """Build common MLflow tags."""
     return {
         "git_commit": git_commit,
         "data_version": data_version,
+        "dvc_data_hash": dvc_data_hash,
         "author": author,
         "framework": framework,
     }
@@ -257,6 +280,7 @@ def train_linear_regression(
     random_state: int,
     git_commit: str,
     data_version: str,
+    dvc_data_hash: str,
     author: str,
 ) -> dict[str, float]:
     """Train and track the Linear Regression baseline."""
@@ -269,6 +293,7 @@ def train_linear_regression(
                 framework="scikit-learn",
                 git_commit=git_commit,
                 data_version=data_version,
+                dvc_data_hash=dvc_data_hash,
                 author=author,
             )
         )
@@ -346,6 +371,7 @@ def train_xgboost_sweep(
     random_state: int,
     git_commit: str,
     data_version: str,
+    dvc_data_hash: str,
     author: str,
 ) -> list[dict[str, float]]:
     """Run a 10-trial nested XGBoost hyperparameter sweep."""
@@ -440,6 +466,7 @@ def train_xgboost_sweep(
                 framework="xgboost",
                 git_commit=git_commit,
                 data_version=data_version,
+                dvc_data_hash=dvc_data_hash,
                 author=author,
             )
         )
@@ -465,6 +492,7 @@ def train_xgboost_sweep(
                         framework="xgboost",
                         git_commit=git_commit,
                         data_version=data_version,
+                        dvc_data_hash=dvc_data_hash,
                         author=author,
                     )
                     | {
@@ -577,6 +605,7 @@ def train_mlp(
     random_state: int,
     git_commit: str,
     data_version: str,
+    dvc_data_hash: str,
     author: str,
 ) -> dict[str, float]:
     """Train and track a small PyTorch MLP."""
@@ -635,6 +664,7 @@ def train_mlp(
                 framework="pytorch",
                 git_commit=git_commit,
                 data_version=data_version,
+                dvc_data_hash=dvc_data_hash,
                 author=author,
             )
             | {
@@ -740,6 +770,14 @@ def train_mlp(
         mlflow.log_artifact(str(model_path))
         mlflow.log_artifact(str(requirements_path))
 
+        # input_example = X_train[:1].toarray().astype("float32")
+
+        mlflow.pytorch.log_model(
+            model,
+            name="model",
+            serialization_format="pickle",
+        )
+
         model_size = model_path.stat().st_size / (1024**2)
 
         mlflow.log_metric(
@@ -773,6 +811,7 @@ def run_experiments(
     git_commit = get_git_commit()
     author = get_author()
     data_version = get_data_hash(data_path)
+    dvc_data_hash = get_dvc_data_hash(data_path)
 
     requirements_path = artifact_dir / "requirements.txt"
 
@@ -808,6 +847,7 @@ def run_experiments(
         random_state,
         git_commit,
         data_version,
+        dvc_data_hash,
         author,
     )
 
@@ -832,6 +872,7 @@ def run_experiments(
         random_state,
         git_commit,
         data_version,
+        dvc_data_hash,
         author,
     )
 
@@ -862,6 +903,7 @@ def run_experiments(
         random_state,
         git_commit,
         data_version,
+        dvc_data_hash,
         author,
     )
 

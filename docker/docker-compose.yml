@@ -68,6 +68,7 @@ services:
       - postgresql://mlflow:mlflow@postgres:5432/mlflow
       - --artifacts-destination
       - s3://mlflow
+      - --serve-artifacts
     restart: unless-stopped
 
 volumes:
