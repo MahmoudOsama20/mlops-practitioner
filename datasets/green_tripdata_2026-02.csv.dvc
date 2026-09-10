@@ -1,0 +1,5 @@
+outs:
+- md5: 06bc9f5a5deabc9bc6fd68982e1e07d1
+  size: 4088210
+  hash: md5
+  path: green_tripdata_2026-02.csv
