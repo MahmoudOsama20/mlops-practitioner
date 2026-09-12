@@ -1,0 +1,79 @@
+schema: '2.0'
+stages:
+  prepare:
+    cmd: python -m prodml.dvc_pipeline prepare
+    deps:
+    - path: datasets/green_tripdata_2026-02.csv
+      hash: md5
+      md5: 06bc9f5a5deabc9bc6fd68982e1e07d1
+      size: 4088210
+    - path: src/prodml/dvc_pipeline.py
+      hash: md5
+      md5: 153ab3d01427a6b07f583fe927c64445
+      size: 4253
+    - path: src/prodml/features.py
+      hash: md5
+      md5: 9f07d542e19409188a71103bb283e92d
+      size: 1757
+    outs:
+    - path: pipelines/data/prepared.csv
+      hash: md5
+      md5: 49efc42b967ecdc8ee86ac9f4bf4facd
+      size: 4633130
+  featurize:
+    cmd: python -m prodml.dvc_pipeline featurize
+    deps:
+    - path: pipelines/data/prepared.csv
+      hash: md5
+      md5: 49efc42b967ecdc8ee86ac9f4bf4facd
+      size: 4633130
+    - path: src/prodml/dvc_pipeline.py
+      hash: md5
+      md5: 153ab3d01427a6b07f583fe927c64445
+      size: 4253
+    outs:
+    - path: pipelines/data/features.pkl
+      hash: md5
+      md5: bda3482f75af801d2d11ec9aea27d342
+      size: 2359450
+  train:
+    cmd: python -m prodml.dvc_pipeline train
+    deps:
+    - path: pipelines/data/features.pkl
+      hash: md5
+      md5: bda3482f75af801d2d11ec9aea27d342
+      size: 2359450
+    - path: src/prodml/dvc_pipeline.py
+      hash: md5
+      md5: 153ab3d01427a6b07f583fe927c64445
+      size: 4253
+    params:
+      params.yaml:
+        training.learning_rate: 0.05
+        training.max_depth: 4
+        training.n_estimators: 150
+    outs:
+    - path: pipelines/models/model.pkl
+      hash: md5
+      md5: 419998adc74e4c015ff760c79fd428d8
+      size: 205689
+  evaluate:
+    cmd: python -m prodml.dvc_pipeline evaluate
+    deps:
+    - path: pipelines/data/features.pkl
+      hash: md5
+      md5: bda3482f75af801d2d11ec9aea27d342
+      size: 2359450
+    - path: pipelines/models/model.pkl
+      hash: md5
+      md5: 419998adc74e4c015ff760c79fd428d8
+      size: 205689
+    - path: src/prodml/dvc_pipeline.py
+      hash: md5
+      md5: 153ab3d01427a6b07f583fe927c64445
+      size: 4253
+    outs:
+    - path: pipelines/metrics.json
+      hash: md5
+      md5: b75bfbe636ff4d89e7f6487a72793eae
+      size: 90

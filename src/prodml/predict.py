@@ -1,33 +1,39 @@
-import pickle
-from pathlib import Path
 from typing import Any
 
+import mlflow
+import mlflow.pyfunc
+import numpy as np
 from sklearn.feature_extraction import DictVectorizer
-from sklearn.linear_model import LinearRegression
 
 from prodml.config import settings
 from prodml.logging_conf import timed
 
 
 class DurationPredictor:
-    """Predict taxi trip duration using a trained model."""
+    """Predict taxi trip duration using the MLflow Production model."""
 
     def __init__(
         self,
-        model_path: Path = settings.model_path,
+        model_uri: str = "models:/ride-duration-predictor/Production",
     ) -> None:
-        self.model_path = model_path
-        self.model: LinearRegression | None = None
+        self.model_uri = model_uri
+        self.model: Any | None = None
         self.vectorizer: DictVectorizer | None = None
 
     def load(self) -> "DurationPredictor":
-        """Load the trained model and vectorizer."""
+        """Load the vectorizer and the MLflow Production model."""
 
-        with open(self.model_path, "rb") as file:
+        # The vectorizer is still stored in the original training artifact.
+        import pickle
+
+        with open(settings.model_path, "rb") as file:
             artifact = pickle.load(file)
 
-        self.model = artifact["model"]
         self.vectorizer = artifact["vectorizer"]
+
+        # Load whichever model is currently in MLflow Production.
+        mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
+        self.model = mlflow.pyfunc.load_model(self.model_uri)
 
         return self
 
@@ -41,11 +47,12 @@ class DurationPredictor:
         if self.model is None or self.vectorizer is None:
             raise RuntimeError("Model is not loaded. Call load() first.")
 
-        X = self.vectorizer.transform([features])
+        X = self.vectorizer.transform([features]).toarray().astype(np.float32)
 
         prediction = self.model.predict(X)
 
-        return float(prediction[0])
+        return float(np.asarray(prediction).reshape(-1)[0])
+        # return float(prediction[0])
 
     @timed
     def predict_batch(
@@ -57,8 +64,9 @@ class DurationPredictor:
         if self.model is None or self.vectorizer is None:
             raise RuntimeError("Model is not loaded. Call load() first.")
 
-        X = self.vectorizer.transform(features)
+        X = self.vectorizer.transform(features).toarray().astype(np.float32)
 
         predictions = self.model.predict(X)
 
-        return predictions.tolist()
+        return np.asarray(predictions).reshape(-1).tolist()
+        # return predictions.tolist()

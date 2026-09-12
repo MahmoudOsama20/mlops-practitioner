@@ -6,3 +6,15 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .coverage
+
+# Local MLflow state
+mlflow.db
+mlruns/
+
+# Local model artifacts
+*.pth
+
+# Local datasets downloaded for experiments
+datasets/green_tripdata_2026-03.csv
+datasets/green_tripdata_2026-04.csv
+datasets/green_tripdata_2026-05.csv

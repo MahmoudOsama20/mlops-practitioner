@@ -15,6 +15,11 @@ dependencies = [
     "skl2onnx",
     "onnx",
     "onnxruntime",
+    "mlflow",
+    "xgboost",
+    "torch",
+    "dvc[s3]",
+    "pyyaml",
 ]
 
 [project.optional-dependencies]
