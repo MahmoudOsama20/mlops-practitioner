@@ -18,3 +18,8 @@ mlruns/
 datasets/green_tripdata_2026-03.csv
 datasets/green_tripdata_2026-04.csv
 datasets/green_tripdata_2026-05.csv
+
+# Terraform
+infra/.terraform/
+infra/*.tfstate
+infra/*.tfstate.*

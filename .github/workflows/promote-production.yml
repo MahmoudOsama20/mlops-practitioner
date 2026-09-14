@@ -1,0 +1,69 @@
+name: Promote to Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Staging Docker image tag to promote"
+        required: true
+        default: "staging-2"
+
+env:
+  DOCKER_IMAGE: "mahmoudosama20/prodml-api"
+
+jobs:
+  promote:
+    name: Approve and promote to Production
+    runs-on: ubuntu-latest
+
+    environment:
+      name: production
+
+    steps:
+      - name: Validate requested image
+        run: |
+          IMAGE="${DOCKER_IMAGE}:${{ inputs.image_tag }}"
+
+          echo "Requested Production image:"
+          echo "$IMAGE"
+
+          if [[ "${{ inputs.image_tag }}" != staging-* ]]; then
+            echo "Only staging-* images can be promoted."
+            exit 1
+          fi
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Pull approved Staging image
+        run: |
+          SOURCE_IMAGE="${DOCKER_IMAGE}:${{ inputs.image_tag }}"
+
+          docker pull "$SOURCE_IMAGE"
+
+      - name: Tag Production image
+        run: |
+          SOURCE_IMAGE="${DOCKER_IMAGE}:${{ inputs.image_tag }}"
+          PRODUCTION_IMAGE="${DOCKER_IMAGE}:production"
+
+          docker tag "$SOURCE_IMAGE" "$PRODUCTION_IMAGE"
+
+          echo "Production image:"
+          echo "$PRODUCTION_IMAGE"
+
+      - name: Push Production image
+        run: |
+          PRODUCTION_IMAGE="${DOCKER_IMAGE}:production"
+
+          docker push "$PRODUCTION_IMAGE"
+
+      - name: Notify success
+        run: |
+          echo "=========================================="
+          echo "Production promotion completed"
+          echo "Source  : ${DOCKER_IMAGE}:${{ inputs.image_tag }}"
+          echo "Target  : ${DOCKER_IMAGE}:production"
+          echo "=========================================="

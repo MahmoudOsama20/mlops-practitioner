@@ -109,7 +109,13 @@ def train() -> None:
     MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     with open(MODEL_PATH, "wb") as file:
-        pickle.dump(model, file)
+        pickle.dump(
+            {
+                "model": model,
+                "vectorizer": data["vectorizer"],
+            },
+            file,
+        )
 
     print("Model trained.")
 
@@ -121,7 +127,9 @@ def evaluate() -> None:
         data = pickle.load(file)
 
     with open(MODEL_PATH, "rb") as file:
-        model = pickle.load(file)
+        artifact = pickle.load(file)
+
+    model = artifact["model"]
 
     predictions = model.predict(data["X_val"])
 

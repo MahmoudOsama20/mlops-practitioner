@@ -11,6 +11,7 @@ import pandas as pd
 import pytest
 import torch
 from scipy.sparse import csr_matrix
+from sklearn.feature_extraction import DictVectorizer
 from sklearn.linear_model import LinearRegression
 
 from prodml import dvc_pipeline, export, registry, train, training
@@ -745,6 +746,8 @@ def test_dvc_pipeline_train_and_evaluate(tmp_path):
         "y_train": np.array([3.0, 5.0, 7.0, 9.0, 11.0]),
         "y_val": np.array([4.0, 8.0]),
     }
+
+    data["vectorizer"] = DictVectorizer()
 
     with open(features_file, "wb") as file:
         pickle.dump(data, file)

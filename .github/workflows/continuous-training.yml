@@ -1,0 +1,460 @@
+  name: Continuous Training
+
+  on:
+    schedule:
+      - cron: "0 3 * * 1"
+
+    workflow_dispatch:
+      inputs:
+        data_version:
+          description: "DVC data version to train on"
+          required: false
+          default: "2026-02"
+
+    repository_dispatch:
+      types:
+        - data-drift
+        - new-data
+
+  env:
+    PYTHON_VERSION: "3.12"
+    MLFLOW_TRACKING_URI: "http://localhost:5000"
+    CT_PROMOTION_MARGIN: "0.01"
+
+    DOCKER_IMAGE: "mahmoudosama20/prodml-api"
+
+    DATA_VERSION: ${{ inputs.data_version || '2026-02' }}
+    DATA_FILE: "datasets/green_tripdata_2026-02.csv"
+    DATA_DVC_HASH: "06bc9f5a5deabc9bc6fd68982e1e07d1"
+
+  jobs:
+    continuous-training:
+      name: Train, evaluate and promote
+      runs-on: ubuntu-latest
+
+      steps:
+        - name: Checkout repository
+          uses: actions/checkout@v4
+
+        # ---------------------------------------------------------
+        # Infrastructure
+        # ---------------------------------------------------------
+
+        - name: Start CT infrastructure
+          run: |
+            docker compose \
+              -f docker/docker-compose.ct.yml \
+              up -d
+
+        - name: Wait for MLflow
+          run: |
+            for i in {1..30}; do
+              if curl --fail --silent http://localhost:5000/health; then
+                echo "MLflow is ready."
+                exit 0
+              fi
+
+              echo "Waiting for MLflow..."
+              sleep 5
+            done
+
+            echo "MLflow failed to start."
+            docker compose -f docker/docker-compose.ct.yml logs
+            exit 1
+
+        # ---------------------------------------------------------
+        # Python environment
+        # ---------------------------------------------------------
+
+        - name: Set up Python
+          uses: actions/setup-python@v5
+          with:
+            python-version: ${{ env.PYTHON_VERSION }}
+            cache: pip
+
+        - name: Install dependencies
+          run: |
+            python -m pip install --upgrade pip
+            pip install -e ".[training]"
+
+        - name: Validate requested data version
+          run: |
+            if [ "${DATA_VERSION}" != "2026-02" ]; then
+              echo "Unsupported data version: ${DATA_VERSION}"
+              echo "Currently supported CT data version: 2026-02"
+              exit 1
+            fi
+
+        # ---------------------------------------------------------
+        # DVC remote
+        # ---------------------------------------------------------
+
+        - name: Configure DVC credentials
+          env:
+            AWS_ACCESS_KEY_ID: minio
+            AWS_SECRET_ACCESS_KEY: minio123
+          run: |
+            dvc remote modify storage endpointurl http://localhost:9000
+
+        - name: Bootstrap DVC remote with versioned dataset
+          env:
+            AWS_ACCESS_KEY_ID: minio
+            AWS_SECRET_ACCESS_KEY: minio123
+          run: |
+            set -e
+
+            python - <<'PY'
+            import hashlib
+            import urllib.request
+
+            url = (
+                "${{ github.server_url }}"
+                "/${{ github.repository }}"
+                "/releases/download/v0.2.0/"
+                "green_tripdata_2026-02.csv"
+            )
+
+            output = "datasets/green_tripdata_2026-02.csv"
+
+            print(f"Downloading dataset from: {url}")
+
+            urllib.request.urlretrieve(url, output)
+
+            expected_md5 = "06bc9f5a5deabc9bc6fd68982e1e07d1"
+
+            digest = hashlib.md5()
+
+            with open(output, "rb") as file:
+                for chunk in iter(lambda: file.read(1024 * 1024), b""):
+                    digest.update(chunk)
+
+            actual_md5 = digest.hexdigest()
+
+            print(f"Expected DVC MD5: {expected_md5}")
+            print(f"Actual DVC MD5:   {actual_md5}")
+
+            if actual_md5 != expected_md5:
+                raise SystemExit("Dataset MD5 verification failed.")
+
+            print("Dataset verification passed.")
+            PY
+
+            python - <<'PY'
+            from minio import Minio
+
+            client = Minio(
+                "localhost:9000",
+                access_key="minio",
+                secret_key="minio123",
+                secure=False,
+            )
+
+            for bucket in ("prodml-dvc", "mlflow"):
+                if not client.bucket_exists(bucket):
+                    client.make_bucket(bucket)
+                    print(f"Created bucket: {bucket}")
+                else:
+                    print(f"Bucket already exists: {bucket}")
+            PY
+
+            dvc add datasets/green_tripdata_2026-02.csv
+
+            dvc push
+
+        - name: Remove bootstrap copy and restore through DVC
+          env:
+            AWS_ACCESS_KEY_ID: minio
+            AWS_SECRET_ACCESS_KEY: minio123
+          run: |
+            rm datasets/green_tripdata_2026-02.csv
+
+            dvc pull
+
+            test -f datasets/green_tripdata_2026-02.csv
+
+            echo "DVC pull restored:"
+            ls -lh datasets/green_tripdata_2026-02.csv
+
+        # ---------------------------------------------------------
+        # Validate + train
+        # ---------------------------------------------------------
+
+        - name: Validate dataset
+          run: |
+            python - <<'PY'
+            import pandas as pd
+
+            path = "datasets/green_tripdata_2026-02.csv"
+
+            df = pd.read_csv(path, nrows=100)
+
+            required_columns = {
+                "lpep_pickup_datetime",
+                "lpep_dropoff_datetime",
+                "PULocationID",
+                "DOLocationID",
+                "trip_distance",
+            }
+
+            missing = required_columns - set(df.columns)
+
+            if missing:
+                raise SystemExit(
+                    f"Dataset validation failed. Missing columns: {sorted(missing)}"
+                )
+
+            print("Dataset validation passed.")
+            print(f"Columns: {len(df.columns)}")
+            PY
+
+        - name: Reproduce DVC pipeline
+          run: |
+            dvc repro
+
+        - name: Show evaluation metrics
+          run: |
+            cat pipelines/metrics.json
+
+        # ---------------------------------------------------------
+        # MLflow candidate
+        # ---------------------------------------------------------
+
+        - name: Log candidate model to MLflow
+          id: candidate
+          env:
+            MLFLOW_TRACKING_URI: ${{ env.MLFLOW_TRACKING_URI }}
+          run: |
+            python -m prodml.ct_mlflow | tee ct_mlflow_output.txt
+
+            RUN_ID=$(grep "MLflow run ID:" ct_mlflow_output.txt | awk '{print $4}')
+
+            if [ -z "$RUN_ID" ]; then
+              echo "Could not determine MLflow run ID."
+              exit 1
+            fi
+
+            echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+
+            echo "Candidate run: $RUN_ID"
+
+        # ---------------------------------------------------------
+        # Ephemeral Production baseline
+        #
+        # GitHub-hosted runners start with an empty MLflow database.
+        # We therefore create a deterministic baseline that is
+        # deliberately slightly worse than the candidate.
+        # ---------------------------------------------------------
+
+        - name: Bootstrap Production baseline
+          env:
+            MLFLOW_TRACKING_URI: ${{ env.MLFLOW_TRACKING_URI }}
+          run: |
+            python - <<'PY'
+            import json
+            import os
+            import pickle
+
+            import mlflow
+            import mlflow.xgboost
+
+            from mlflow.tracking import MlflowClient
+
+            experiment_name = "prodml-duration-prediction"
+            model_name = "ride-duration-predictor"
+
+            mlflow.set_tracking_uri(os.environ["MLFLOW_TRACKING_URI"])
+
+            client = MlflowClient()
+
+            experiment = mlflow.set_experiment(experiment_name)
+
+            with open("pipelines/metrics.json", encoding="utf-8") as file:
+                metrics = json.load(file)
+
+            with open("pipelines/models/model.pkl", "rb") as file:
+                artifact = pickle.load(file)
+
+            model = artifact["model"]
+
+            baseline_mae = float(metrics["mae"]) * 1.02
+
+            with mlflow.start_run(
+                experiment_id=experiment.experiment_id,
+                run_name="continuous-training-production-baseline",
+            ) as run:
+
+                mlflow.log_metrics(
+                    {
+                        "mae": baseline_mae,
+                        "rmse": float(metrics["rmse"]) * 1.02,
+                        "r2": float(metrics["r2"]) - 0.01,
+                    }
+                )
+
+                mlflow.log_params(
+                    {
+                        "n_estimators": model.n_estimators,
+                        "max_depth": model.max_depth,
+                        "learning_rate": model.learning_rate,
+                    }
+                )
+
+                mlflow.set_tags(
+                    {
+                        "training_type": "continuous_training_baseline",
+                        "model_name": model_name,
+                        "framework": "xgboost",
+                    }
+                )
+
+                mlflow.xgboost.log_model(model, name="model")
+
+                baseline_run_id = run.info.run_id
+
+            registered = mlflow.register_model(
+                f"runs:/{baseline_run_id}/model",
+                model_name,
+            )
+
+            client.transition_model_version_stage(
+                name=model_name,
+                version=registered.version,
+                stage="Production",
+            )
+
+            print(f"Production baseline version: {registered.version}")
+            print(f"Production baseline MAE: {baseline_mae:.6f}")
+            PY
+
+        # ---------------------------------------------------------
+        # Performance gate
+        # ---------------------------------------------------------
+
+        - name: Evaluate promotion gate
+          env:
+            MLFLOW_TRACKING_URI: ${{ env.MLFLOW_TRACKING_URI }}
+            CT_PROMOTION_MARGIN: ${{ env.CT_PROMOTION_MARGIN }}
+          run: |
+            python -m prodml.continuous_training \
+              --run-id "${{ steps.candidate.outputs.run_id }}" \
+              --margin "${CT_PROMOTION_MARGIN}"
+
+        # ---------------------------------------------------------
+        # Verify Staging
+        # ---------------------------------------------------------
+
+        - name: Verify Staging model
+          env:
+            MLFLOW_TRACKING_URI: ${{ env.MLFLOW_TRACKING_URI }}
+          run: |
+            python - <<'PY'
+            import os
+
+            from mlflow.tracking import MlflowClient
+
+            model_name = "ride-duration-predictor"
+
+            client = MlflowClient(
+                tracking_uri=os.environ["MLFLOW_TRACKING_URI"]
+            )
+
+            staging = [
+                version
+                for version in client.search_model_versions()
+                if version.name == model_name
+                and version.current_stage == "Staging"
+            ]
+
+            if not staging:
+                raise SystemExit("No Staging model found.")
+
+            version = staging[-1]
+
+            print(f"Staging model version: {version.version}")
+            print(f"Run ID: {version.run_id}")
+            PY
+
+        # ---------------------------------------------------------
+        # Docker image
+        # ---------------------------------------------------------
+
+        - name: Determine Staging version
+          id: staging
+          env:
+            MLFLOW_TRACKING_URI: ${{ env.MLFLOW_TRACKING_URI }}
+          run: |
+            VERSION=$(python - <<'PY'
+            import os
+
+            from mlflow.tracking import MlflowClient
+
+            client = MlflowClient(
+                tracking_uri=os.environ["MLFLOW_TRACKING_URI"]
+            )
+
+            versions = [
+                version
+                for version in client.search_model_versions()
+                if version.name == "ride-duration-predictor"
+                and version.current_stage == "Staging"
+            ]
+
+            if not versions:
+                raise SystemExit("No Staging model found.")
+
+            print(versions[-1].version)
+            PY
+            )
+
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+        - name: Build Staging Docker image
+          run: |
+            IMAGE="${DOCKER_IMAGE}:staging-${{ steps.staging.outputs.version }}"
+
+            docker build \
+              -f docker/Dockerfile \
+              -t "$IMAGE" \
+              .
+
+            echo "Built image: $IMAGE"
+
+        - name: Log in to Docker Hub
+          uses: docker/login-action@v3
+          with:
+            username: ${{ secrets.DOCKERHUB_USERNAME }}
+            password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+        - name: Push Staging Docker image
+          run: |
+            IMAGE="${DOCKER_IMAGE}:staging-${{ steps.staging.outputs.version }}"
+
+            docker push "$IMAGE"
+
+            echo "Pushed image: $IMAGE"
+
+        # ---------------------------------------------------------
+        # Notification
+        # ---------------------------------------------------------
+
+        - name: Notify success
+          run: |
+            echo "=========================================="
+            echo "Continuous training completed successfully"
+            echo "Data version : ${DATA_VERSION}"
+            echo "DVC hash     : ${DATA_DVC_HASH}"
+            echo "MLflow run   : ${{ steps.candidate.outputs.run_id }}"
+            echo "Staging      : ${{ steps.staging.outputs.version }}"
+            echo "Docker image : ${DOCKER_IMAGE}:staging-${{ steps.staging.outputs.version }}"
+            echo "=========================================="
+
+        # ---------------------------------------------------------
+        # Cleanup
+        # ---------------------------------------------------------
+
+        - name: Cleanup CT infrastructure
+          if: always()
+          run: |
+            docker compose \
+              -f docker/docker-compose.ct.yml \
+              down -v

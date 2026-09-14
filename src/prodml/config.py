@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     framework: str = "scikit-learn"
 
     mlflow_tracking_uri: str = "http://localhost:5000"
+    local_model_path: Path | None = None
 
     model_config = SettingsConfigDict(
         env_file=".env",

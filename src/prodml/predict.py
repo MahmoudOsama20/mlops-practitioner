@@ -1,7 +1,5 @@
 from typing import Any
 
-import mlflow
-import mlflow.pyfunc
 import numpy as np
 from sklearn.feature_extraction import DictVectorizer
 
@@ -10,7 +8,7 @@ from prodml.logging_conf import timed
 
 
 class DurationPredictor:
-    """Predict taxi trip duration using the MLflow Production model."""
+    """Predict taxi trip duration using an MLflow or local model."""
 
     def __init__(
         self,
@@ -21,17 +19,32 @@ class DurationPredictor:
         self.vectorizer: DictVectorizer | None = None
 
     def load(self) -> "DurationPredictor":
-        """Load the vectorizer and the MLflow Production model."""
+        """Load the vectorizer and prediction model."""
 
-        # The vectorizer is still stored in the original training artifact.
         import pickle
+
+        local_model_path = getattr(
+            settings,
+            "local_model_path",
+            None,
+        )
+
+        if local_model_path:
+            with open(local_model_path, "rb") as file:
+                artifact = pickle.load(file)
+
+            self.model = artifact["model"]
+            self.vectorizer = artifact["vectorizer"]
+
+            return self
 
         with open(settings.model_path, "rb") as file:
             artifact = pickle.load(file)
 
         self.vectorizer = artifact["vectorizer"]
 
-        # Load whichever model is currently in MLflow Production.
+        import mlflow
+
         mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
         self.model = mlflow.pyfunc.load_model(self.model_uri)
 
@@ -52,14 +65,13 @@ class DurationPredictor:
         prediction = self.model.predict(X)
 
         return float(np.asarray(prediction).reshape(-1)[0])
-        # return float(prediction[0])
 
     @timed
     def predict_batch(
         self,
         features: list[dict[str, Any]],
     ) -> list[float]:
-        """Predict duration for multiple trips."""
+        """Predict duration for multiple tripmlflows."""
 
         if self.model is None or self.vectorizer is None:
             raise RuntimeError("Model is not loaded. Call load() first.")
@@ -69,4 +81,3 @@ class DurationPredictor:
         predictions = self.model.predict(X)
 
         return np.asarray(predictions).reshape(-1).tolist()
-        # return predictions.tolist()
