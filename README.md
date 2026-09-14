@@ -2,10 +2,20 @@
 
 An end-to-end MLOps project for predicting **NYC Green Taxi trip duration**.
 
-This repository is part of a larger **five-mini-project MLOps journey**.  
-**Mini Project 1 — From Notebook to Production-Ready Service** is now complete.
+This repository is part of a larger **five-mini-project MLOps journey**.
 
-The project starts with a reproducible machine-learning baseline and progressively turns it into a production-oriented ML system. The completed implementation covers data preparation, feature engineering, model training, model persistence, ONNX serialization, a FastAPI prediction service, structured logging, automated testing, code quality, containerization, Docker Compose, and Docker Hub publishing.
+**Mini Project 1 — From Notebook to Production-Ready Service** is complete, and the
+repository now also contains the infrastructure, experiment tracking, data
+versioning, CI, and Continuous Training work from **Module 2**.
+
+The project starts with a reproducible machine-learning baseline and progressively
+turns it into a production-oriented ML system. The implementation now covers data
+preparation, feature engineering, model training, model persistence, ONNX
+serialization, FastAPI serving, structured logging, automated testing, code
+quality, containerization, Docker Hub publishing, DVC data versioning, MLflow
+experiment tracking and model registry, CI, Terraform-managed local
+infrastructure, and Continuous Training with automated Staging promotion and
+human-approved Production promotion.
 
 ---
 
@@ -156,11 +166,12 @@ The implemented modules are:
 | Module | Focus | Status |
 |---|---|---|
 | Module 1 | Baseline model and project packaging | Complete |
+| Module 2 | MLOps infrastructure, DVC, MLflow, CI, Terraform, and Continuous Training | Complete |
 | Module 4 | Serialization and ONNX | Complete |
 | Module 5 | Production FastAPI API | Complete |
 | Module 7 | Containerization and publishing | Complete |
 
-**Modules 2, 3, and 6 are not part of the current implementation.**
+**Module 3 and Module 6 are not part of the current implementation.**
 
 ---
 
@@ -254,12 +265,19 @@ mlops-practitioner/
 ├── pyproject.toml
 ├── README.md
 │
+├── .github/
+│   └── workflows/
+│       ├── ci.yml
+│       ├── continuous-training.yml
+│       └── promote-production.yml
+│
 ├── datasets/
 │   └── green_tripdata_2026-01.csv
 │
 ├── docker/
 │   ├── Dockerfile
-│   └── docker-compose.yml
+│   ├── docker-compose.yml
+│   └── docker-compose.ct.yml
 │
 ├── models/
 │   ├── baseline.pkl
@@ -270,6 +288,7 @@ mlops-practitioner/
 │
 ├── reports/
 │   ├── module-1.md
+│   ├── module-2.md
 │   ├── module-4.md
 │   ├── module-5.md
 │   └── module-7.md
@@ -282,7 +301,10 @@ mlops-practitioner/
 │       │   ├── main.py
 │       │   └── schemas.py
 │       ├── config.py
+│       ├── continuous_training.py
+│       ├── ct_mlflow.py
 │       ├── data.py
+│       ├── dvc_pipeline.py
 │       ├── export.py
 │       ├── features.py
 │       ├── logging_conf.py
@@ -483,6 +505,119 @@ PRODML_ONNX_PATH=/app/models/model.onnx
 ```
 
 ---
+
+
+# MLOps Architecture
+
+The repository now contains two connected layers:
+
+1. **Model serving** — the FastAPI application packaged as a Docker image.
+2. **MLOps lifecycle** — DVC, MLflow, CI, Terraform, Continuous Training, Staging,
+   and human-approved Production promotion.
+
+```text
+                         ┌─────────────────────────────┐
+                         │        GitHub Repository     │
+                         │  source + tests + workflows  │
+                         └──────────────┬──────────────┘
+                                        │
+                         ┌──────────────┴──────────────┐
+                         │                             │
+                         v                             v
+                  ┌─────────────┐              ┌─────────────┐
+                  │     CI      │              │     DVC     │
+                  │ test/lint   │              │ data version│
+                  └─────────────┘              └──────┬──────┘
+                                                       │
+                                                       v
+                                              ┌─────────────────┐
+                                              │ Continuous      │
+                                              │ Training        │
+                                              └────────┬────────┘
+                                                       │
+                                      ┌────────────────┼────────────────┐
+                                      v                v                v
+                                Validate data       Train/Eval      Log to MLflow
+                                                                         │
+                                                                         v
+                                                               ┌─────────────────┐
+                                                               │ Promotion Gate  │
+                                                               │ compare MAE     │
+                                                               └────────┬────────┘
+                                                                        │
+                                                                        v
+                                                                  ┌───────────┐
+                                                                  │  Staging  │
+                                                                  └─────┬─────┘
+                                                                        │
+                                                               Docker image
+                                                                        │
+                                                                        v
+                                                               ┌─────────────┐
+                                                               │ Human       │
+                                                               │ approval    │
+                                                               └──────┬──────┘
+                                                                      │
+                                                                      v
+                                                               ┌─────────────┐
+                                                               │ Production  │
+                                                               │ Docker image│
+                                                               └─────────────┘
+```
+
+### MLOps Components
+
+| Component | Responsibility |
+|---|---|
+| GitHub Actions CI | Automated tests, linting, and quality checks |
+| DVC | Dataset and pipeline artifact versioning |
+| MLflow | Experiment tracking and model registry |
+| Terraform | Reproducible local infrastructure |
+| Continuous Training | Scheduled/manual/event-driven retraining |
+| Promotion Gate | Prevents weak candidates from reaching Staging |
+| GitHub Environment | Human approval before Production |
+| Docker Hub | Versioned Staging and Production images |
+
+### Continuous Training Triggers
+
+The Continuous Training workflow supports:
+
+- Weekly scheduled execution
+- Manual `workflow_dispatch`
+- `repository_dispatch` for `data-drift`
+- `repository_dispatch` for `new-data`
+
+The current CT workflow was tested end-to-end with the `2026-02` dataset.
+
+### Promotion Policy
+
+The candidate model is compared with the current Production baseline using
+MAE. With the configured `CT_PROMOTION_MARGIN=0.01`, the candidate must improve
+MAE by at least 1% relative to Production.
+
+A rejected candidate is logged and does not fail the workflow. A passing candidate
+is registered and promoted to **Staging** automatically.
+
+**Production is never promoted automatically.** The `production` GitHub Environment
+requires a human approval before the approved Staging Docker image is promoted to
+the `production` tag.
+
+### Infrastructure
+
+For Continuous Training, GitHub Actions starts an ephemeral stack containing:
+
+- PostgreSQL for MLflow backend metadata
+- MinIO for DVC and MLflow artifact storage
+- MLflow Tracking Server
+
+The stack is defined in:
+
+```text
+docker/docker-compose.ct.yml
+```
+
+The stack is created for the CT run and removed during workflow cleanup.
+
 
 # Architecture
 
@@ -1636,6 +1771,32 @@ Covers Docker containerization, multi-stage builds, image-size comparison, Docke
 - [x] Python package structure
 - [x] Configuration management
 
+
+### Module 2 — MLOps Infrastructure + Continuous Training
+
+- [x] DVC data versioning
+- [x] DVC remote with MinIO
+- [x] MLflow tracking server
+- [x] MLflow experiment tracking
+- [x] MLflow Model Registry
+- [x] GitHub Actions CI
+- [x] Terraform infrastructure
+- [x] Terraform destroy/apply verification
+- [x] Continuous Training workflow
+- [x] Weekly schedule trigger
+- [x] Manual workflow trigger with data-version input
+- [x] `repository_dispatch` data-drift trigger
+- [x] `repository_dispatch` new-data trigger
+- [x] Data validation before training
+- [x] Candidate evaluation and MAE gate
+- [x] Automatic Staging promotion
+- [x] Staging Docker image build and Docker Hub push
+- [x] GitHub `production` Environment
+- [x] Human approval before Production promotion
+- [x] Production Docker image promotion
+- [x] End-to-end CT verification
+
+
 ### Module 4 — Serialization + ONNX
 
 - [x] Pickle model artifact
@@ -1693,24 +1854,20 @@ Covers Docker containerization, multi-stage builds, image-size comparison, Docke
 
 # Next Steps
 
-The current implementation has completed the modules included in Mini Project 1.
+The current implementation has completed the currently implemented modules and
+the MLOps infrastructure work through Module 2.
 
-Potential future MLOps extensions include:
+Planned extensions include:
 
-- [ ] CI/CD pipeline
-- [ ] Automated Docker image builds
-- [ ] Automated testing in CI
-- [ ] Model performance monitoring
-- [ ] Data-quality monitoring
-- [ ] API load testing
-- [ ] Deployment to a cloud/container platform
-- [ ] Model version management
-- [ ] Model registry integration
-- [ ] More advanced models and feature sets
-- [ ] Automated retraining
+- [ ] Module 3 implementation
+- [ ] Module 6 implementation
+- [ ] Data-quality and data-drift monitoring improvements
 - [ ] Production observability and metrics
+- [ ] API load testing
+- [ ] Cloud/container-platform deployment
+- [ ] More advanced models and feature sets
 
-These are future extensions rather than completed components of the current implementation.
+These are future extensions rather than completed components.
 
 ---
 
@@ -1755,6 +1912,9 @@ NYC Green Taxi Duration Prediction
 Mini Project
 1 / 5 — From Notebook to Production
 
+MLOps Module
+2 — Infrastructure + Continuous Training
+
 Status
 Complete
 
@@ -1787,6 +1947,12 @@ appuser
 
 Published Image
 mahmoudosama20/prodml-api:0.1.0
+
+Staging Image
+mahmoudosama20/prodml-api:staging-2
+
+Production Image
+mahmoudosama20/prodml-api:production
 
 Latest Tag
 mahmoudosama20/prodml-api:latest
