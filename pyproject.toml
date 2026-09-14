@@ -17,12 +17,16 @@ dependencies = [
     "onnxruntime",
     "mlflow",
     "xgboost",
-    "torch",
-    "dvc[s3]",
-    "pyyaml",
 ]
 
 [project.optional-dependencies]
+training = [
+    "torch",
+    "dvc[s3]",
+    "pyyaml",
+    "minio",
+]
+
 dev = [
     "pytest",
     "pytest-cov",
