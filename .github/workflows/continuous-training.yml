@@ -168,7 +168,7 @@
           run: |
             rm datasets/green_tripdata_2026-02.csv
 
-            dvc pull
+            dvc pull datasets/green_tripdata_2026-02.csv.dvc
 
             test -f datasets/green_tripdata_2026-02.csv
 
